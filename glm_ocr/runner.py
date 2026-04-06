@@ -19,7 +19,7 @@ def run_on_folder(folder_path: str, model: str, content_type: str = "contents", 
     os.makedirs(out_dir, exist_ok=True)
 
     for img_path in list_image_files(str(folder), content_type):
-        process_image(img_path, model, folder_prompt, str(out_dir), overwrite=overwrite)
+        process_image(img_path, model, folder_prompt, str(out_dir), overwrite=overwrite, content_type=content_type)
 
 
 def _strip_outer_code_fence(text: str) -> str:
@@ -28,7 +28,7 @@ def _strip_outer_code_fence(text: str) -> str:
     return re.sub(r"^```[a-z]*\n([\s\S]*?)\n```$", r"\1", text.strip())
 
 
-def process_image(img_path: str, model: str, folder_prompt: Optional[str], out_dir: str, overwrite: bool = False) -> str:
+def process_image(img_path: str, model: str, folder_prompt: Optional[str], out_dir: str, overwrite: bool = False, content_type: str = "contents") -> str:
     """Process a single image path and save the raw response to out_dir.
 
     Returns the saved filepath.
@@ -66,7 +66,7 @@ def process_image(img_path: str, model: str, folder_prompt: Optional[str], out_d
     saved = save_raw_response(out_dir, filename, full_response)
     print(f"Saved: {saved}")
 
-    warnings = check_quality(full_response)
+    warnings = check_quality(full_response, content_type)
     if warnings:
         print("Quality warnings:")
         for w in warnings:
@@ -91,4 +91,4 @@ def run_single_image(image_path: str, model: str, overwrite: bool = False) -> st
     folder_prompt = read_prompt_file(str(topic_root), content_type)
     out_dir = topic_root / "outputs" / f"{content_type}_outputs"
     os.makedirs(out_dir, exist_ok=True)
-    return process_image(str(img), model, folder_prompt, str(out_dir), overwrite=overwrite)
+    return process_image(str(img), model, folder_prompt, str(out_dir), overwrite=overwrite, content_type=content_type)

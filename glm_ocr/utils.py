@@ -21,13 +21,21 @@ def list_image_files(folder_path: str, content_type: str = "contents"):
             yield p
 
 
-def check_quality(response: str) -> list:
-    """Run heuristic quality checks on an extracted theory response.
+def check_quality(response: str, content_type: str = "contents") -> list:
+    """Run heuristic quality checks on an OCR response.
 
     Returns a list of warning strings. An empty list means no issues detected.
     """
     warnings = []
 
+    if content_type == "exercises":
+        if "### QUESTION" not in response:
+            warnings.append("No '### QUESTION' markers found — extraction may have failed or model ignored the output format.")
+        if len(response.strip()) < 100:
+            warnings.append(f"Response is very short ({len(response.strip())} chars) — extraction may have failed.")
+        return warnings
+
+    # contents branch
     if "### CONTENT" not in response:
         warnings.append("Missing '### CONTENT' section header — model may have ignored the output format.")
 
