@@ -1,0 +1,40 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: haiguru-postgres
+    environment:
+      POSTGRES_USER: haiguru
+      POSTGRES_PASSWORD: haiguru_pass
+      POSTGRES_DB: haiguru_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+    networks:
+      - haiguru-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U haiguru -d haiguru_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: haiguru-pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@haiguru.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+    ports:
+      - "5050:80"
+    networks:
+      - haiguru-net
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+
+networks:
+  haiguru-net:
+    driver: bridge
