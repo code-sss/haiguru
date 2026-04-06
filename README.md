@@ -127,16 +127,28 @@ Upserts `categories`, `course_path_nodes`, and `topics` from the content root fo
 uv run python populate_hierarchy.py --content-root C:/github/siva/SVC
 ```
 
-### Step 2 — Load topic content (OCR → DB)
+### Step 2 — Load topic content and exercises (OCR → DB)
 
-Runs OCR on images in a topic folder and loads the resulting `.md` files into `topic_contents`.
+Runs OCR on images and loads the resulting `.md` files into DB tables. Use `--type` to control what is processed:
+
+| `--type` | OCR source | Loaded into |
+|---|---|---|
+| `contents` (default) | `inputs/contents/` | `topic_contents` |
+| `exercises` | `inputs/exercises/` | `questions`, `paragraph_questions` |
+| `both` | both | all of the above |
 
 ```bash
-# Full run: OCR + load
+# Full run (OCR + load) — theory content only
 uv run python -m etl_pipeline --topic-path "SVC/GRADE_7/MATHEMATICS/VOLUME_1/INTEGERS"
 
-# Skip OCR (outputs/ already exist), just load into DB
-uv run python -m etl_pipeline --topic-path "..." --skip-transform
+# Load exercises (OCR already done)
+uv run python -m etl_pipeline --topic-path "..." --type exercises --skip-transform
+
+# Load both contents and exercises from existing OCR output
+uv run python -m etl_pipeline --topic-path "..." --type both --skip-transform
+
+# OCR both types, then load exercises only
+uv run python -m etl_pipeline --topic-path "..." --type exercises
 
 # OCR only — inspect output before loading
 uv run python -m etl_pipeline --topic-path "..." --skip-load
@@ -144,6 +156,8 @@ uv run python -m etl_pipeline --topic-path "..." --skip-load
 # Re-process all images (overwrite existing .md files)
 uv run python -m etl_pipeline --topic-path "..." --overwrite
 ```
+
+**Exercises format:** Each `exercises_outputs/raw_response_*.md` file must use structured markers (`### QUESTION`, `### PARAGRAPH`) — see `etl_pipeline/parse_exercises.py`. Letter-based answers like `(b)` are resolved to option text automatically. Sub-questions under a `### PARAGRAPH` are linked via a `paragraph_questions` row.
 
 **Prerequisites for OCR:** Ollama must be running with the `glm-ocr-optimized` model pulled, and the topic folder must have `prompts/contents_prompt.md` (and `exercises_prompt.md` for exercises).
 
@@ -201,7 +215,10 @@ The LLM model defaults to `qwen3.5:9b` (set `LLM_MODEL` in `.env` to override). 
 ### New topic — first time
 
 ```bash
+# Load theory content
 uv run python -m etl_pipeline --topic-path "SVC/GRADE_7/MATHEMATICS/VOLUME_1/INTEGERS"
+# Load exercises
+uv run python -m etl_pipeline --topic-path "SVC/GRADE_7/MATHEMATICS/VOLUME_1/INTEGERS" --type exercises --skip-transform
 uv run python -m embed_pipeline --topic-id <uuid>
 ```
 
@@ -240,7 +257,9 @@ uv run python -m embed_pipeline --topic-id <uuid>
 | `categories` | `populate_hierarchy.py` (also ETL as safety net) |
 | `course_path_nodes` | `populate_hierarchy.py` (also ETL as safety net) |
 | `topics` | `populate_hierarchy.py` (also ETL as safety net) |
-| `topic_contents` | `etl_pipeline` — one row per `.md` file |
+| `topic_contents` | `etl_pipeline --type contents` — one row per `.md` file |
+| `questions` | `etl_pipeline --type exercises` — one row per parsed question |
+| `paragraph_questions` | `etl_pipeline --type exercises` — one per passage, references question UUIDs |
 | `topic_content_vectors` | `embed_pipeline` — pgvector table, not Alembic-managed |
 
 All write operations are upserts — re-running any step is always safe.

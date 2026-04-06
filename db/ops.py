@@ -2,7 +2,7 @@
 
 from sqlalchemy.orm import Session
 
-from db.models import Category, CoursePathNode, Topic, TopicContent
+from db.models import Category, CoursePathNode, ParagraphQuestion, Question, Topic, TopicContent
 
 
 def get_or_create_category(session: Session, name: str) -> Category:
@@ -66,3 +66,53 @@ def upsert_topic_content(session: Session, topic_id, title: str, text: str, orde
         )
         session.add(obj)
         print(f"  Inserted content: {title}")
+
+
+def get_or_create_question(
+    session: Session,
+    topic_id,
+    question_text: str,
+    question_type: str,
+    options: list,
+    correct_answers: list,
+) -> Question:
+    obj = session.query(Question).filter_by(topic_id=topic_id, question_text=question_text).first()
+    if obj:
+        obj.question_type = question_type
+        obj.options = options
+        obj.correct_answers = correct_answers
+        print(f"  Updated question: {question_text[:60]}")
+    else:
+        obj = Question(
+            topic_id=topic_id,
+            question_text=question_text,
+            question_type=question_type,
+            options=options,
+            correct_answers=correct_answers,
+        )
+        session.add(obj)
+        session.flush()
+        print(f"  Created question: {question_text[:60]}")
+    return obj
+
+
+def get_or_create_paragraph_question(
+    session: Session,
+    passage: str,
+    topic_id,
+    question_ids: list,
+) -> ParagraphQuestion:
+    obj = session.query(ParagraphQuestion).filter_by(topic_id=topic_id, passage=passage).first()
+    if obj:
+        obj.question_ids = question_ids
+        print(f"  Updated paragraph question: {passage[:60]}")
+    else:
+        obj = ParagraphQuestion(
+            topic_id=topic_id,
+            passage=passage,
+            question_ids=question_ids,
+        )
+        session.add(obj)
+        session.flush()
+        print(f"  Created paragraph question: {passage[:60]}")
+    return obj

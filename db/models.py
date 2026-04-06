@@ -153,6 +153,7 @@ class ParagraphQuestion(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     passage = Column(String, nullable=False)
     topic_id = Column(UUID(as_uuid=True), ForeignKey("topics.id"), nullable=True)
+    question_ids = Column(ARRAY(UUID(as_uuid=True)), nullable=False, default=list)
 
 
 # ---------------------------------------------------------------------------

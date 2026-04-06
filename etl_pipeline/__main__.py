@@ -4,6 +4,7 @@ Usage:
     uv run python -m etl_pipeline --topic-path <path>
 
 Flags:
+    --type              contents | exercises | both (default: contents)
     --skip-transform    Skip OCR step (use existing .md files)
     --skip-load         Skip DB load step
     --overwrite         Re-run OCR even if output files already exist
@@ -20,6 +21,7 @@ from .load import load
 def main(argv=None):
     parser = argparse.ArgumentParser(prog="python -m etl_pipeline")
     parser.add_argument("--topic-path", required=True, help="Path to the topic folder (e.g. .../GRADE_7/MATHEMATICS/VOLUME_1/INTEGERS under the content root)")
+    parser.add_argument("--type", choices=["contents", "exercises", "both"], default="contents", help="What to process: contents, exercises, or both")
     parser.add_argument("--model", default="glm-ocr-optimized", help="Ollama OCR model name")
     parser.add_argument("--overwrite", action="store_true", help="Re-run OCR even for already-processed images")
     parser.add_argument("--skip-transform", action="store_true", help="Skip OCR step")
@@ -35,16 +37,19 @@ def main(argv=None):
 
     # Transform
     if not args.skip_transform:
-        transform(ctx, model=args.model, overwrite=args.overwrite)
+        types_to_transform = ["contents", "exercises"] if args.type == "both" else [args.type]
+        for t in types_to_transform:
+            transform(ctx, model=args.model, overwrite=args.overwrite, content_type=t)
     else:
         print("\n[Transform] Skipped.")
 
     # Load
     if not args.skip_load:
-        load(ctx)
+        load(ctx, content_type=args.type)
     else:
         print("\n[Load] Skipped.")
 
 
 if __name__ == "__main__":
     main()
+

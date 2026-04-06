@@ -32,6 +32,15 @@ uv run python -m glm_ocr --image <path-to-image>
 
 # OCR options: --model, --type (contents|exercises, default: contents), --overwrite (default: skip already processed)
 
+# ETL pipeline — load contents (default) or exercises into Postgres
+uv run python -m etl_pipeline --topic-path "C:/github/siva/SVC/GRADE_7/MATHEMATICS/VOLUME_1/INTEGERS"
+uv run python -m etl_pipeline --topic-path "..." --type exercises --skip-transform
+uv run python -m etl_pipeline --topic-path "..." --type both --skip-transform
+# --type: contents (default) | exercises | both
+# --skip-transform: skip OCR, use existing .md files
+# --skip-load: OCR only, don't write to DB
+# --overwrite: re-run OCR even if output already exists
+
 # Embed all topic_contents into pgvector
 uv run python -m embed_pipeline
 
@@ -123,7 +132,8 @@ exam_sessions   (a user's attempt at an exam_template)
 - `course_path_nodes.node_type`: `grade` | `subject` | `course`
 - `topic_contents.content_type`: `video` | `pdf` | `text` | `question` | `question_answer`
 - `questions.question_type`: `single_choice` | `multiple_choice` | `true_false` | `fill_in_the_blank` | `essay` | `paragraph`
-- `questions.options` and `correct_answers` are JSONB lists.
+- `questions.options` and `correct_answers` are JSONB lists. Letter-based answers like `(b)` are resolved to option text by `etl_pipeline/parse_exercises.py`.
+- `paragraph_questions.question_ids`: `UUID[]` — ordered list of `questions.id` values that belong to this passage.
 - `exam_templates.mode`: `static` | `dynamic` | `custom`
 - `exam_sessions.status`: `pending` | `ongoing` | `completed` | `failed`
 - `user_id` / `created_by` fields store a string (Keycloak `sub` claim or a plain user identifier — TBD).
