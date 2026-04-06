@@ -30,7 +30,7 @@ from llama_index.core.vector_stores.types import (
 )
 from llama_index.llms.ollama import Ollama
 
-from config import EMBED_DIM, EMBED_MODEL, LLM_CONTEXT_WINDOW, LLM_MODEL, LLM_REQUEST_TIMEOUT
+from config import EMBED_DIM, EMBED_MODEL, LLM_CONTEXT_WINDOW, LLM_MODEL, LLM_REQUEST_TIMEOUT, LLM_THINKING
 from rag.retriever import build_retriever
 
 
@@ -95,7 +95,7 @@ def main() -> None:
 
     print(f"\nQuery        : {args.query!r}")
     print(f"Embed model  : {EMBED_MODEL} (dim={EMBED_DIM}, device=cpu)")
-    print(f"LLM model    : {LLM_MODEL} (context_window={LLM_CONTEXT_WINDOW}, timeout={LLM_REQUEST_TIMEOUT}s)")
+    print(f"LLM model    : {LLM_MODEL} (context_window={LLM_CONTEXT_WINDOW}, timeout={LLM_REQUEST_TIMEOUT}s, thinking={LLM_THINKING})")
     print(f"Top-k        : {args.top_k}")
     if filters:
         print(f"Filters      : {filters}")
@@ -109,7 +109,7 @@ def main() -> None:
         return
 
     # Full RAG: retrieve + synthesise with Ollama
-    llm = Ollama(model=LLM_MODEL, request_timeout=LLM_REQUEST_TIMEOUT, context_window=LLM_CONTEXT_WINDOW)
+    llm = Ollama(model=LLM_MODEL, request_timeout=LLM_REQUEST_TIMEOUT, context_window=LLM_CONTEXT_WINDOW, thinking=LLM_THINKING)
     Settings.llm = llm
 
     query_engine = RetrieverQueryEngine(
