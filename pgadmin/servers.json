@@ -1,0 +1,14 @@
+{
+  "Servers": {
+    "1": {
+      "Name": "haiguru",
+      "Group": "Servers",
+      "Host": "haiguru-postgres",
+      "Port": 5432,
+      "MaintenanceDB": "haiguru_db",
+      "Username": "haiguru",
+      "SSLMode": "prefer",
+      "PassFile": "/pgpass"
+    }
+  }
+}

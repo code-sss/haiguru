@@ -2,124 +2,160 @@
 
 Backend for storing and serving educational content and exams.
 
-## Infrastructure
+---
 
-Start Postgres and pgAdmin:
+## Prerequisites
+
+| Tool | Purpose |
+|---|---|
+| [Docker Desktop](https://www.docker.com/products/docker-desktop/) | Runs Postgres + pgAdmin |
+| [uv](https://docs.astral.sh/uv/getting-started/installation/) | Python package manager |
+| [Ollama](https://ollama.com/) | Local LLM for OCR (needed for ETL only) |
+
+---
+
+## From-scratch setup
+
+### 1. Clone and configure environment
+
+```bash
+git clone <repo-url>
+cd haiguru
+cp .env.example .env   # edit if your DB port or credentials differ
+```
+
+### 2. Install dependencies
+
+```bash
+uv sync
+```
+
+### 3. Start Postgres + pgAdmin
 
 ```bash
 docker compose up -d
-uv run alembic upgrade head         # run once to create tables (repeat after model changes)
 ```
 
 - Postgres: `localhost:5433`
 - pgAdmin: `http://localhost:5050` — `admin@haiguru.com` / `admin`
+  - Connect to server: host=`haiguru-postgres`, port=`5432`, user=`haiguru`, password=`haiguru_pass`
 
-## ETL Pipeline
+The container uses the `pgvector/pgvector:pg16` image and auto-runs `db/init/01_extensions.sql` on first start, which enables the `vector` extension needed for embeddings.
 
-Content flows from raw images into Postgres in three steps:
+### 4. Apply database migrations
 
-```
-images in topic folder
-    ↓  [Transform]  glm_ocr — OCR each image via Ollama
-    ↓               saves outputs/raw_response_<image>.md
-    ↓  [Load]       reads .md files, upserts into Postgres:
-    ↓               category → grade → subject → volume → topic → topic_contents
+```bash
+uv run alembic upgrade head
 ```
 
-The folder path encodes the full hierarchy — no extra config needed:
+This creates all tables (`categories`, `course_path_nodes`, `topics`, `topic_contents`, `questions`, `exam_templates`, etc.).
 
-```
-<category>/<grade>/<subject>/<volume>/<topic>/
-    e.g. SVC/GRADE_7/MATHEMATICS/VOLUME_1/INTEGERS/
-```
-
-### Prerequisites
-
-- Ollama running locally with `glm-ocr-optimized` model pulled
-- A `prompt.md` or `prompt.txt` in the topic folder (instructs the OCR model)
-- Postgres running (`docker compose up -d`) with tables created
-
-### What gets written to Postgres
-
-| Table | Rows |
-|---|---|
-| `categories` | one row per root folder (e.g. SVC), created on first run |
-| `course_path_nodes` | one row each for grade, subject, volume, created on first run |
-| `topics` | one row per topic folder, created on first run |
-| `topic_contents` | one row per `.md` file (`content_type=text`), upserted on every run |
-
-All rows are upserted — re-running the pipeline is always safe.
+> After changing `db/models.py`, generate and apply a new migration:
+> ```bash
+> uv run alembic revision --autogenerate -m "describe the change"
+> uv run alembic upgrade head
+> ```
 
 ---
 
-## Scenarios
+## Data pipeline
 
-### 1. New topic — first time
+```
+SVC/<category>/<grade>/<subject>/<volume>/<topic>/
+    inputs/   ← source images
+    outputs/  ← OCR output (.md files, one per image)
+    prompts/  ← prompt.md required by OCR model
+```
 
-Images are in the topic folder, nothing in DB yet.
+### Step 1 — Populate hierarchy
+
+Upserts `categories`, `course_path_nodes`, and `topics` from the SVC folder structure. No content or OCR needed. Safe to re-run.
 
 ```bash
+uv run python populate_hierarchy.py --svc-root C:/github/siva/SVC
+```
+
+### Step 2 — Load topic content (OCR → DB)
+
+Runs OCR on images in a topic folder and loads the resulting `.md` files into `topic_contents`.
+
+```bash
+# Full run: OCR + load
 uv run python -m etl_pipeline --topic-path "SVC/GRADE_7/MATHEMATICS/VOLUME_1/INTEGERS"
-```
 
-Runs OCR on all images → saves `.md` files → creates all hierarchy rows → inserts all `topic_contents` rows.
-
----
-
-### 2. New topic — OCR already done, just load into DB
-
-`.md` files already exist in `outputs/`, DB has no rows for this topic yet.
-
-```bash
+# Skip OCR (outputs/ already exist), just load into DB
 uv run python -m etl_pipeline --topic-path "..." --skip-transform
-```
 
-Skips OCR → creates hierarchy rows → inserts `topic_contents` rows.
+# OCR only — inspect output before loading
+uv run python -m etl_pipeline --topic-path "..." --skip-load
 
----
-
-### 3. Append new images to an existing topic
-
-New images added to a topic folder that is already loaded in the DB.
-
-```bash
-uv run python -m etl_pipeline --topic-path "..."
-```
-
-OCR skips already-processed images (no `--overwrite`) → new `.md` files are created → load inserts new `topic_contents` rows → existing rows are untouched.
-
----
-
-### 4. Re-process a bad image (OCR quality was poor)
-
-One image produced a bad `.md` file. Fix the `prompt.md` or retry with a different model.
-
-```bash
+# Re-process all images (overwrite existing .md files)
 uv run python -m etl_pipeline --topic-path "..." --overwrite
 ```
 
-Re-runs OCR on all images (overwriting existing `.md` files) → load updates all `topic_contents` rows with new text.
+**Prerequisites for OCR:** Ollama must be running with the `glm-ocr-optimized` model pulled, and the topic folder must have a `prompts/prompt.md`.
 
-To re-process a single image, delete its `raw_response_*.md` file and run without `--overwrite` — only the missing file will be regenerated.
+### Step 3 — Generate embeddings
+
+Reads all `topic_contents` rows from Postgres, generates embeddings using `BAAI/bge-m3`, and stores vectors in the `topic_content_vectors` table (managed by pgvector, not Alembic).
+
+```bash
+# Embed all content
+uv run python -m embed_pipeline
+
+# Embed a single topic
+uv run python -m embed_pipeline --topic-id <uuid>
+```
+
+Re-running is safe — existing nodes are updated, not duplicated.
 
 ---
 
-### 5. OCR only — review output before loading
+## Common scenarios
 
-Run OCR and inspect the `.md` files before committing anything to the DB.
+### New topic — first time
 
 ```bash
-uv run python -m etl_pipeline --topic-path "..." --skip-load
+uv run python -m etl_pipeline --topic-path "SVC/GRADE_7/MATHEMATICS/VOLUME_1/INTEGERS"
+uv run python -m embed_pipeline --topic-id <uuid>
+```
+
+### DB was wiped — reload everything
+
+```bash
+uv run alembic upgrade head
+uv run python populate_hierarchy.py --svc-root C:/github/siva/SVC
+uv run python -m etl_pipeline --topic-path "..." --skip-transform   # repeat per topic
+uv run python -m embed_pipeline
+```
+
+### Re-process a bad OCR result
+
+Delete the bad `.md` file and re-run (only the missing file is regenerated):
+
+```bash
+rm "SVC/.../outputs/raw_response_IMG_001.md"
+uv run python -m etl_pipeline --topic-path "..."
+uv run python -m embed_pipeline --topic-id <uuid>
+```
+
+Or re-process all images in a topic:
+
+```bash
+uv run python -m etl_pipeline --topic-path "..." --overwrite
+uv run python -m embed_pipeline --topic-id <uuid>
 ```
 
 ---
 
-### 6. Reload DB from existing `.md` files (e.g. after DB reset)
+## What's in the database
 
-`.md` files exist, DB is empty or was wiped.
+| Table | Written by |
+|---|---|
+| `categories` | `populate_hierarchy.py` (also ETL as safety net) |
+| `course_path_nodes` | `populate_hierarchy.py` (also ETL as safety net) |
+| `topics` | `populate_hierarchy.py` (also ETL as safety net) |
+| `topic_contents` | `etl_pipeline` — one row per `.md` file |
+| `topic_content_vectors` | `embed_pipeline` — pgvector table, not Alembic-managed |
 
-```bash
-uv run python -m etl_pipeline --topic-path "..." --skip-transform
-```
-
-Same as scenario 2 — hierarchy and content rows are recreated from the `.md` files.
+All write operations are upserts — re-running any step is always safe.

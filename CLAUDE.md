@@ -14,6 +14,9 @@ but this project is independent.
 # Start Postgres + pgAdmin
 docker compose up -d
 
+# Copy and edit environment variables (first time only)
+cp .env.example .env
+
 # Install dependencies
 uv sync
 
@@ -27,6 +30,12 @@ uv run python -m glm_ocr --folder <path-to-topic-folder>
 uv run python -m glm_ocr --image <path-to-image>
 
 # OCR options: --model, --output-subdir (default: outputs), --overwrite (default: skip already processed)
+
+# Embed all topic_contents into pgvector
+uv run python -m embed_pipeline
+
+# Embed a single topic
+uv run python -m embed_pipeline --topic-id <uuid>
 ```
 
 ## Infrastructure
@@ -49,10 +58,12 @@ SVC/                          ← category name
     └── MATHEMATICS/          ← course_path_node (node_type=subject)
         └── VOLUME_1/         ← course_path_node (node_type=course)
             └── INTEGERS/     ← topic
-                ├── prompt.md (or prompt.txt) ← required before running OCR
+                ├── inputs/
+                │   └── IMG_*.jpg               ← source images (not loaded into DB)
                 ├── outputs/
                 │   └── raw_response_IMG_*.md   ← topic_content (content_type=text), one per page
-                └── IMG_*.jpg                   ← source images (not loaded into DB)
+                └── prompts/
+                    └── prompt.md (or prompt.txt) ← required before running OCR
 ```
 
 ## glm_ocr Package

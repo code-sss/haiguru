@@ -4,9 +4,10 @@ from typing import Optional
 
 
 def read_prompt_file(folder_path: str) -> Optional[str]:
-    """Look for prompt.md or prompt.txt inside folder_path and return contents if found."""
+    """Look for prompt.md or prompt.txt inside folder_path/prompts/ and return contents if found."""
+    prompts_dir = os.path.join(folder_path, "prompts")
     for name in ("prompt.md", "prompt.txt"):
-        path = os.path.join(folder_path, name)
+        path = os.path.join(prompts_dir, name)
         if os.path.isfile(path):
             with open(path, "r", encoding="utf-8") as f:
                 return f.read()
@@ -15,8 +16,9 @@ def read_prompt_file(folder_path: str) -> Optional[str]:
 
 def list_image_files(folder_path: str):
     exts = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tiff"}
-    for entry in sorted(os.listdir(folder_path)):
-        p = os.path.join(folder_path, entry)
+    inputs_dir = os.path.join(folder_path, "inputs")
+    for entry in sorted(os.listdir(inputs_dir)):
+        p = os.path.join(inputs_dir, entry)
         if os.path.isfile(p) and os.path.splitext(entry.lower())[1] in exts:
             yield p
 

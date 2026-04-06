@@ -7,7 +7,7 @@ from .utils import read_prompt_file, list_image_files, check_quality
 
 def run_on_folder(folder_path: str, model: str, output_subdir: str = "outputs", overwrite: bool = False) -> None:
     """Process all images in `folder_path`, use folder-level prompt if present,
-    and save raw responses to `folder_path/<output_subdir>/raw_response_<image>.txt`.
+    and save raw responses to `folder_path/<output_subdir>/raw_response_<image>.md`.
     """
     folder = Path(folder_path)
     if not folder.is_dir():
@@ -83,8 +83,8 @@ def run_single_image(image_path: str, model: str, output_dir: Optional[str] = No
     saved filepath is returned.
     """
     image_path = str(image_path)
-    folder = Path(image_path).parent
-    folder_prompt = read_prompt_file(str(folder))
-    out_dir = output_dir if (output_dir and os.path.isabs(output_dir)) else os.path.join(str(folder), output_dir or "outputs")
+    topic_root = Path(image_path).parent.parent  # image is in <topic>/inputs/
+    folder_prompt = read_prompt_file(str(topic_root))
+    out_dir = output_dir if (output_dir and os.path.isabs(output_dir)) else os.path.join(str(topic_root), output_dir or "outputs")
     os.makedirs(out_dir, exist_ok=True)
     return process_image(image_path, model, folder_prompt, out_dir, overwrite=overwrite)

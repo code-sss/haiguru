@@ -1,7 +1,7 @@
 """ETL pipeline entry point.
 
 Usage:
-    uv run python -m etl_pipeline --topic-path <path> --svc-root <path>
+    uv run python -m etl_pipeline --topic-path <path>
 
 Flags:
     --skip-transform    Skip OCR step (use existing .md files)
