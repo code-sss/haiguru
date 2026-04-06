@@ -28,9 +28,8 @@ from llama_index.core.vector_stores.types import (
     MetadataFilter,
     MetadataFilters,
 )
-from llama_index.llms.ollama import Ollama
-
-from config import EMBED_DIM, EMBED_MODEL, LLM_CONTEXT_WINDOW, LLM_MODEL, LLM_REQUEST_TIMEOUT, LLM_THINKING
+from config import EMBED_DIM, EMBED_MODEL, LLM_CONTEXT_WINDOW, RAG_MODEL, LLM_REQUEST_TIMEOUT, LLM_THINKING
+from llm_factory import make_llm
 from rag.retriever import build_retriever
 
 
@@ -95,7 +94,7 @@ def main() -> None:
 
     print(f"\nQuery        : {args.query!r}")
     print(f"Embed model  : {EMBED_MODEL} (dim={EMBED_DIM}, device=cpu)")
-    print(f"LLM model    : {LLM_MODEL} (context_window={LLM_CONTEXT_WINDOW}, timeout={LLM_REQUEST_TIMEOUT}s, thinking={LLM_THINKING})")
+    print(f"RAG model    : {RAG_MODEL} (context_window={LLM_CONTEXT_WINDOW}, timeout={LLM_REQUEST_TIMEOUT}s, thinking={LLM_THINKING})")
     print(f"Top-k        : {args.top_k}")
     if filters:
         print(f"Filters      : {filters}")
@@ -108,8 +107,8 @@ def main() -> None:
         _print_nodes(nodes)
         return
 
-    # Full RAG: retrieve + synthesise with Ollama
-    llm = Ollama(model=LLM_MODEL, request_timeout=LLM_REQUEST_TIMEOUT, context_window=LLM_CONTEXT_WINDOW, thinking=LLM_THINKING)
+    # Full RAG: retrieve + synthesise
+    llm = make_llm(RAG_MODEL, request_timeout=LLM_REQUEST_TIMEOUT, context_window=LLM_CONTEXT_WINDOW, thinking=LLM_THINKING)
     Settings.llm = llm
 
     query_engine = RetrieverQueryEngine(
@@ -119,7 +118,7 @@ def main() -> None:
 
     response = query_engine.query(args.query)
 
-    print(f"\nAnswer ({LLM_MODEL}):\n")
+    print(f"\nAnswer ({RAG_MODEL}):\n")
     print(str(response))
 
     if response.source_nodes:

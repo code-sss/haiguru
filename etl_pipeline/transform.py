@@ -3,8 +3,9 @@
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from config import TRANSFORM_MODEL
 from .extract import TopicContext
-from .parse_exercises import parse_exercises_file
+from .llm_transform_exercises import llm_parse_exercises
 
 
 @dataclass
@@ -14,11 +15,17 @@ class TransformResult:
     items: list[dict] = field(default_factory=list)
 
 
-def transform(ctx: TopicContext, content_type: str = "contents") -> TransformResult:
+def transform(
+    ctx: TopicContext,
+    content_type: str = "contents",
+    transform_model: str = TRANSFORM_MODEL,
+) -> TransformResult:
     """Read raw_response_*.md files from outputs and parse them into structured dicts.
 
     For contents: returns dicts with keys: title, text, order.
-    For exercises: returns a flat list of question dicts (see parse_exercises_file).
+    For exercises: uses an LLM (transform_model) to parse the raw OCR text into a flat
+    list of question dicts with keys: question_type, question_text, options,
+    correct_answers, passage.
 
     Skips gracefully if the outputs directory does not exist.
     """
@@ -41,10 +48,12 @@ def transform(ctx: TopicContext, content_type: str = "contents") -> TransformRes
             items.append({"title": md_path.name, "text": text, "order": order})
         return TransformResult(content_type=content_type, items=items)
 
-    # exercises
+    # exercises — LLM-based parsing
     items = []
     for md_path in md_files:
-        questions = parse_exercises_file(md_path)
+        print(f"  Parsing {md_path.name} via LLM ({transform_model})...")
+        questions = llm_parse_exercises(md_path, model=transform_model)
+        print(f"    → {len(questions)} question(s)")
         items.extend(questions)
     return TransformResult(content_type=content_type, items=items)
 

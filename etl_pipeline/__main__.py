@@ -13,6 +13,7 @@ Flags:
 
 import argparse
 
+from config import TRANSFORM_MODEL
 from .extract import extract, run_ocr
 from .transform import transform
 from .load import load
@@ -23,6 +24,7 @@ def main(argv=None):
     parser.add_argument("--topic-path", required=True, help="Path to the topic folder (e.g. .../GRADE_7/MATHEMATICS/VOLUME_1/INTEGERS under the content root)")
     parser.add_argument("--type", choices=["contents", "exercises", "both"], default="contents", help="What to process: contents, exercises, or both")
     parser.add_argument("--model", default="glm-ocr-optimized", help="Ollama OCR model name")
+    parser.add_argument("--transform-model", default=None, help="Ollama text model for LLM-based exercise transform (default: TRANSFORM_MODEL from .env)")
     parser.add_argument("--overwrite", action="store_true", help="Re-run OCR even for already-processed images")
     parser.add_argument("--skip-extract", action="store_true", help="Skip OCR step (use existing .md files)")
     parser.add_argument("--skip-load", action="store_true", help="Skip DB load step")
@@ -44,7 +46,8 @@ def main(argv=None):
         print("[Extract] OCR skipped.")
 
     # Transform — read .md files and parse into structured dicts
-    results = [transform(ctx, content_type=t) for t in types_to_run]
+    transform_model = args.transform_model or TRANSFORM_MODEL
+    results = [transform(ctx, content_type=t, transform_model=transform_model) for t in types_to_run]
 
     # Load — write to Postgres
     if not args.skip_load:

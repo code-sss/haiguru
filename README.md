@@ -10,7 +10,7 @@ Backend for storing and serving educational content and exams.
 |---|---|
 | [Docker Desktop](https://www.docker.com/products/docker-desktop/) | Runs Postgres + pgAdmin |
 | [uv](https://docs.astral.sh/uv/getting-started/installation/) | Python package manager |
-| [Ollama](https://ollama.com/) | Local LLM for OCR (ETL) and answer synthesis (RAG) |
+| [Ollama](https://ollama.com/) | Vision OCR model (required for OCR step); also used as default LLM for exercise parsing and RAG — can be replaced by OpenAI / Anthropic / TogetherAI |
 
 ---
 
@@ -129,7 +129,7 @@ uv run python populate_hierarchy.py --content-root C:/github/siva/SVC
 
 ### Step 2 — Load topic content and exercises (OCR → DB)
 
-Runs OCR on images (extract), reads and parses the `.md` files (transform), then loads into DB tables (load). Use `--type` to control what is processed:
+Runs OCR on images (extract), reads and parses the `.md` files via an LLM (transform), then loads into DB tables (load). Use `--type` to control what is processed:
 
 | `--type` | OCR source | Loaded into |
 |---|---|---|
@@ -157,13 +157,15 @@ uv run python -m etl_pipeline --topic-path "..." --skip-load
 uv run python -m etl_pipeline --topic-path "..." --overwrite
 ```
 
-**Exercises format:** Each `exercises_outputs/raw_response_*.md` file must use structured markers (`### QUESTION`, `### PARAGRAPH`) — see `etl_pipeline/parse_exercises.py`. Letter-based answers like `(b)` are resolved to option text automatically. Sub-questions under a `### PARAGRAPH` are linked via a `paragraph_questions` row.
+**Exercises parsing:** Each `exercises_outputs/raw_response_*.md` file is sent to an LLM (`TRANSFORM_MODEL`, default `qwen3.5:9b` via Ollama) which returns a structured JSON array of questions. No fixed markers are required in the OCR output. See `etl_pipeline/llm_transform_exercises.py` and the [LLM Providers](#llm-providers) section for how to use a different model.
 
 **Prerequisites for OCR:** Ollama must be running with the `glm-ocr-optimized` model pulled, and the topic folder must have `prompts/contents_prompt.md` (and `exercises_prompt.md` for exercises).
 
 ### Step 3 — Generate embeddings
 
-Reads all `topic_contents` rows from Postgres, generates embeddings using `BAAI/bge-m3`, and stores vectors in the `topic_content_vectors` table (managed by pgvector, not Alembic).
+Reads all `topic_contents` rows from Postgres, generates embeddings, and stores vectors in the `topic_content_vectors` table (managed by pgvector, not Alembic).
+
+Default model: `BAAI/bge-m3` (HuggingFace, runs locally). Override via `EMBED_MODEL` in `.env` — see [LLM Providers](#llm-providers).
 
 ```bash
 # Embed all content
@@ -204,13 +206,50 @@ uv run python -m rag "fractions" --retrieve-only
 uv run python -m rag "negative numbers" --topic-id <uuid>
 ```
 
-The LLM model defaults to `qwen3.5:9b` (set `LLM_MODEL` in `.env` to override). Ollama must be running for synthesis; `--retrieve-only` works without it.
+The LLM model for synthesis defaults to `qwen3.5:9b` via Ollama (set `RAG_MODEL` in `.env` to override — see [LLM Providers](#llm-providers) for OpenAI/Anthropic/TogetherAI options). Ollama must be running for synthesis; `--retrieve-only` works without it.
 
 `rag.retriever.build_retriever()` is also importable for use in other parts of the project.
 
 ---
 
-## Common scenarios
+## LLM Providers
+
+Three pipelines support pluggable LLM/embedding providers via a prefix on the model name:
+
+| Prefix | Provider | Required env var |
+|---|---|---|
+| *(none)* | Ollama (local, **default**) for LLM; HuggingFace (local) for embeddings | — |
+| `openai://` | OpenAI | `OPENAI_API_KEY` |
+| `anthropic://` | Anthropic | `ANTHROPIC_API_KEY` |
+| `together://` | TogetherAI (OpenAI-compatible) | `TOGETHER_API_KEY` |
+
+Set the key(s) in `.env`, then point the model variable at the provider:
+
+```ini
+# .env
+OPENAI_API_KEY=sk-...
+ANTHROPIC_API_KEY=sk-ant-...
+TOGETHER_API_KEY=...
+
+# Use GPT-4o for exercise parsing and RAG synthesis
+TRANSFORM_MODEL=openai://gpt-4o
+RAG_MODEL=openai://gpt-4o
+
+# Use OpenAI embeddings (update EMBED_DIM to match the model)
+EMBED_MODEL=openai://text-embedding-3-large
+EMBED_DIM=3072
+```
+
+`TRANSFORM_MODEL` can also be overridden per-run without changing `.env`:
+
+```bash
+uv run python -m etl_pipeline --topic-path "..." --type exercises \
+  --transform-model "anthropic://claude-opus-4-5"
+```
+
+> **Note:** Ollama is still required for vision OCR (`glm-ocr-optimized`). Only the text LLM and embedding steps support external providers.
+
+---
 
 ### New topic — first time
 
@@ -218,7 +257,7 @@ The LLM model defaults to `qwen3.5:9b` (set `LLM_MODEL` in `.env` to override). 
 # Load theory content
 uv run python -m etl_pipeline --topic-path "SVC/GRADE_7/MATHEMATICS/VOLUME_1/INTEGERS"
 # Load exercises
-uv run python -m etl_pipeline --topic-path "SVC/GRADE_7/MATHEMATICS/VOLUME_1/INTEGERS" --type exercises --skip-transform
+uv run python -m etl_pipeline --topic-path "SVC/GRADE_7/MATHEMATICS/VOLUME_1/INTEGERS" --type exercises --skip-extract
 uv run python -m embed_pipeline --topic-id <uuid>
 ```
 
@@ -227,7 +266,7 @@ uv run python -m embed_pipeline --topic-id <uuid>
 ```bash
 uv run alembic upgrade head
 uv run python populate_hierarchy.py --content-root C:/github/siva/SVC
-uv run python -m etl_pipeline --topic-path "..." --skip-transform   # repeat per topic
+uv run python -m etl_pipeline --topic-path "..." --skip-extract   # repeat per topic
 uv run python -m embed_pipeline
 ```
 

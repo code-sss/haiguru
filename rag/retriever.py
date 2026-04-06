@@ -22,11 +22,11 @@ os.environ.setdefault("HUGGINGFACE_HUB_OFFLINE", "1")
 from llama_index.core import Settings, VectorStoreIndex
 from llama_index.core.retrievers import QueryFusionRetriever
 from llama_index.core.vector_stores.types import MetadataFilters
-from llama_index.embeddings.huggingface import HuggingFaceEmbedding
 from llama_index.vector_stores.postgres import PGVectorStore
 from sqlalchemy import make_url
 
 from config import DATABASE_URL, EMBED_DIM, EMBED_MODEL, MODEL_PATH
+from llm_factory import make_embed_model
 
 TABLE_NAME = "topic_content_vectors"
 
@@ -36,11 +36,7 @@ _embed_model_initialised = False
 def _ensure_embed_model() -> None:
     global _embed_model_initialised
     if not _embed_model_initialised:
-        Settings.embed_model = HuggingFaceEmbedding(
-            model_name=EMBED_MODEL,
-            device="cpu",
-            **({"cache_folder": MODEL_PATH} if MODEL_PATH else {}),
-        )
+        Settings.embed_model = make_embed_model(EMBED_MODEL, device="cpu", model_path=MODEL_PATH)
         _embed_model_initialised = True
 
 

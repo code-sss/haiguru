@@ -40,12 +40,17 @@ uv run python -m etl_pipeline --topic-path "..." --type both --skip-extract
 # --skip-extract: skip OCR, use existing .md files
 # --skip-load: OCR only, don't write to DB
 # --overwrite: re-run OCR even if output already exists
+# --transform-model: override the LLM used to parse exercises (see LLM Providers below)
 
 # Embed all topic_contents into pgvector
 uv run python -m embed_pipeline
 
 # Embed a single topic
 uv run python -m embed_pipeline --topic-id <uuid>
+
+# RAG query (retrieve + synthesise)
+uv run python -m rag "explain integers"
+uv run python -m rag "prime numbers" --grade GRADE_7 --subject MATHEMATICS --retrieve-only
 ```
 
 ## Infrastructure
@@ -85,18 +90,61 @@ SVC/                          ← category name
 
 ## glm_ocr Package
 
-`glm_ocr/` is a local OCR pipeline that processes textbook images into Markdown using locally-running Ollama models. It is **not** listed in `pyproject.toml` dependencies — it requires `Pillow`, `ollama`, and `requests` separately.
+`glm_ocr/` is a local OCR pipeline that processes textbook images into Markdown using locally-running Ollama multimodal models (default: `glm-ocr-optimized`).
 
 ### Pipeline
 
-Sends the image (JPEG-encoded base64) to an Ollama multimodal model (default: `glm-ocr-optimized`) using the type-specific prompt. Output saved as `raw_response_<image>.md`.
+Sends the image (JPEG-encoded base64) to an Ollama multimodal model using the type-specific prompt. Output saved as `raw_response_<image>.md`.
 
 ### Key behaviors
 
 - Each topic folder **must** have `prompts/contents_prompt.md` (and `exercises_prompt.md` for exercises) — processing fails without it (`read_prompt_file` in `utils.py`).
 - Already-processed images are skipped by default; use `--overwrite` to reprocess.
 - `check_quality` in `utils.py` runs heuristic checks on the raw response looking for missing `### CONTENT` section headers and question patterns that indicate the model captured exercises instead of theory content.
-- Ollama must be running locally; no API keys or environment variables are needed.
+- Ollama must be running locally; no API keys needed for OCR.
+
+## LLM Providers
+
+Three pipelines use an LLM. Each supports a provider prefix on the model name:
+
+| Prefix | Provider | Required env var |
+|---|---|---|
+| *(none)* | Ollama (local, default) | — |
+| `openai://` | OpenAI | `OPENAI_API_KEY` |
+| `anthropic://` | Anthropic | `ANTHROPIC_API_KEY` |
+| `together://` | TogetherAI (OpenAI-compat) | `TOGETHER_API_KEY` |
+
+### Environment variables (`config.py`)
+
+| Variable | Used by | Default |
+|---|---|---|
+| `TRANSFORM_MODEL` | Exercise parsing LLM | `qwen3.5:9b` (Ollama) |
+| `RAG_MODEL` | RAG answer synthesis LLM | `qwen3.5:9b` (Ollama) |
+| `EMBED_MODEL` | Embedding model | `BAAI/bge-m3` (HuggingFace local) |
+| `OPENAI_API_KEY` | OpenAI calls | — |
+| `ANTHROPIC_API_KEY` | Anthropic calls | — |
+| `TOGETHER_API_KEY` | TogetherAI calls | — |
+
+### Examples
+
+```bash
+# Use GPT-4o to parse exercises
+uv run python -m etl_pipeline --topic-path "..." --type exercises --transform-model "openai://gpt-4o"
+
+# Use Claude for RAG synthesis (set in .env)
+RAG_MODEL=anthropic://claude-opus-4-5
+
+# Use OpenAI embeddings (also update EMBED_DIM to match, e.g. 3072)
+EMBED_MODEL=openai://text-embedding-3-large
+EMBED_DIM=3072
+```
+
+The `TRANSFORM_MODEL` can also be overridden per-run:
+```bash
+uv run python -m etl_pipeline --topic-path "..." --type exercises --transform-model "together://meta-llama/Llama-3-70b-chat-hf"
+```
+
+Routing logic lives in `llm_factory.py` (LlamaIndex objects for RAG/embed) and `glm_ocr/client.py` (`send_text_request_streaming` for exercise parsing).
 
 ## Data Model
 
@@ -145,4 +193,6 @@ exam_sessions   (a user's attempt at an exam_template)
 - SQLAlchemy 2.x (sync, declarative)
 - psycopg2-binary for Postgres driver
 - Docker Compose for local infrastructure
-- Ollama (local) for OCR and formatting models
+- Ollama (local) for vision OCR; also supported: OpenAI, Anthropic, TogetherAI for text LLMs
+- LlamaIndex for embedding, vector store, and RAG orchestration
+- pgvector for dense + sparse hybrid search

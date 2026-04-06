@@ -13,11 +13,11 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session
 from llama_index.core import Settings, VectorStoreIndex
 from llama_index.core.schema import TextNode
-from llama_index.embeddings.huggingface import HuggingFaceEmbedding
 from llama_index.vector_stores.postgres import PGVectorStore
 from sqlalchemy import make_url
 
-from config import DATABASE_URL, EMBED_MODEL, EMBED_DIM, MODEL_PATH
+from config import DATABASE_URL, EMBED_MODEL, EMBED_DIM, EMBED_DEVICE, MODEL_PATH
+from llm_factory import make_embed_model
 
 TABLE_NAME = "topic_content_vectors"
 
@@ -75,10 +75,7 @@ def main():
     args = parser.parse_args()
 
     # Configure embedding model (no LLM needed for indexing)
-    Settings.embed_model = HuggingFaceEmbedding(
-        model_name=EMBED_MODEL,
-        **({"cache_folder": MODEL_PATH} if MODEL_PATH else {}),
-    )
+    Settings.embed_model = make_embed_model(EMBED_MODEL, device=EMBED_DEVICE, model_path=MODEL_PATH)
     Settings.llm = None
 
     # Load rows from DB
