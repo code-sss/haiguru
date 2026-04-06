@@ -39,18 +39,6 @@ class TestExtract:
         ctx = extract(str(topic_dir))
         assert ctx.outputs_dir == topic_dir.resolve() / "outputs"
 
-    def test_image_paths_empty_when_no_images(self, tmp_path):
-        topic_dir = _make_topic_dir(tmp_path)
-        ctx = extract(str(topic_dir))
-        assert ctx.image_paths == []
-
-    def test_image_paths_populated_with_jpg(self, tmp_path):
-        topic_dir = _make_topic_dir(tmp_path)
-        (topic_dir / "inputs" / "IMG_001.jpg").write_bytes(b"fake")
-        (topic_dir / "inputs" / "IMG_002.jpg").write_bytes(b"fake")
-        ctx = extract(str(topic_dir))
-        assert len(ctx.image_paths) == 2
-
     def test_raises_for_nonexistent_path(self):
         with pytest.raises(ValueError, match="does not exist"):
             extract("/nonexistent/path/that/does/not/exist/at/all")

@@ -5,7 +5,7 @@ Usage:
 
 Flags:
     --type              contents | exercises | both (default: contents)
-    --skip-transform    Skip OCR step (use existing .md files)
+    --skip-extract      Skip OCR step (use existing .md files)
     --skip-load         Skip DB load step
     --overwrite         Re-run OCR even if output files already exist
     --model             Ollama model name (default: glm-ocr-optimized)
@@ -13,7 +13,7 @@ Flags:
 
 import argparse
 
-from .extract import extract
+from .extract import extract, run_ocr
 from .transform import transform
 from .load import load
 
@@ -24,28 +24,32 @@ def main(argv=None):
     parser.add_argument("--type", choices=["contents", "exercises", "both"], default="contents", help="What to process: contents, exercises, or both")
     parser.add_argument("--model", default="glm-ocr-optimized", help="Ollama OCR model name")
     parser.add_argument("--overwrite", action="store_true", help="Re-run OCR even for already-processed images")
-    parser.add_argument("--skip-transform", action="store_true", help="Skip OCR step")
+    parser.add_argument("--skip-extract", action="store_true", help="Skip OCR step (use existing .md files)")
     parser.add_argument("--skip-load", action="store_true", help="Skip DB load step")
     args = parser.parse_args(argv)
 
     print(f"\n=== ETL Pipeline ===")
 
-    # Extract
+    # Extract — validate + parse metadata
     ctx = extract(args.topic_path)
     print(f"[Extract] {ctx.category_name} / {ctx.grade} / {ctx.subject} / {ctx.volume} / {ctx.topic}")
-    print(f"          {len(ctx.image_paths)} image(s) found")
 
-    # Transform
-    if not args.skip_transform:
-        types_to_transform = ["contents", "exercises"] if args.type == "both" else [args.type]
-        for t in types_to_transform:
-            transform(ctx, model=args.model, overwrite=args.overwrite, content_type=t)
+    types_to_run = ["contents", "exercises"] if args.type == "both" else [args.type]
+
+    # Extract — OCR
+    if not args.skip_extract:
+        for t in types_to_run:
+            run_ocr(ctx, content_type=t, model=args.model, overwrite=args.overwrite)
     else:
-        print("\n[Transform] Skipped.")
+        print("[Extract] OCR skipped.")
 
-    # Load
+    # Transform — read .md files and parse into structured dicts
+    results = [transform(ctx, content_type=t) for t in types_to_run]
+
+    # Load — write to Postgres
     if not args.skip_load:
-        load(ctx, content_type=args.type)
+        for result in results:
+            load(ctx, result)
     else:
         print("\n[Load] Skipped.")
 

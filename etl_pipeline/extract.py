@@ -1,8 +1,9 @@
-"""Extract step: validate a topic folder and parse its metadata from the path."""
+"""Extract step: validate a topic folder, parse its metadata, and run OCR."""
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
+from glm_ocr.runner import run_on_folder
 from glm_ocr.utils import list_image_files
 
 
@@ -16,7 +17,6 @@ class TopicContext:
     topic: str           # e.g. "INTEGERS"
     topic_path: Path
     outputs_dir: Path
-    image_paths: list[str] = field(default_factory=list)
 
 
 def extract(topic_path: str) -> TopicContext:
@@ -42,8 +42,6 @@ def extract(topic_path: str) -> TopicContext:
 
     category_name, grade, subject, volume, topic_name = parts[-5], parts[-4], parts[-3], parts[-2], parts[-1]
 
-    image_paths = list(list_image_files(str(topic)))
-
     return TopicContext(
         category_name=category_name,
         grade=grade,
@@ -52,5 +50,30 @@ def extract(topic_path: str) -> TopicContext:
         topic=topic_name,
         topic_path=topic,
         outputs_dir=topic / "outputs",
-        image_paths=image_paths,
     )
+
+
+def run_ocr(
+    ctx: TopicContext,
+    content_type: str = "contents",
+    model: str = "glm-ocr-optimized",
+    overwrite: bool = False,
+) -> None:
+    """Run glm_ocr on images in ctx.topic_path/inputs/{content_type}/.
+
+    Outputs are saved to ctx.outputs_dir/{content_type}_outputs/.
+    Skips gracefully if the inputs directory does not exist.
+    Skips images that already have output unless overwrite=True.
+    """
+    inputs_dir = ctx.topic_path / "inputs" / content_type
+    if not inputs_dir.is_dir():
+        print(f"[Extract] inputs/{content_type}/ not found, skipping OCR.")
+        return
+
+    images = list(list_image_files(str(ctx.topic_path), content_type))
+    if not images:
+        print(f"[Extract] No images found in inputs/{content_type}/, skipping OCR.")
+        return
+
+    print(f"\n[Extract] {ctx.topic} ({content_type}) — {len(images)} image(s)")
+    run_on_folder(str(ctx.topic_path), model=model, content_type=content_type, overwrite=overwrite)

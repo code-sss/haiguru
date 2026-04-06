@@ -1,32 +1,50 @@
-"""Transform step: run OCR on topic images to produce raw_response_*.md files."""
+"""Transform step: read OCR output .md files and parse them into structured dicts."""
 
-from glm_ocr.runner import run_on_folder
-from glm_ocr.utils import list_image_files
+from dataclasses import dataclass, field
+from pathlib import Path
+
 from .extract import TopicContext
+from .parse_exercises import parse_exercises_file
 
 
-def transform(
-    ctx: TopicContext,
-    model: str = "glm-ocr-optimized",
-    overwrite: bool = False,
-    content_type: str = "contents",
-) -> None:
-    """Run glm_ocr on images in ctx.topic_path/inputs/{content_type}/.
+@dataclass
+class TransformResult:
+    """Parsed content ready for the load step."""
+    content_type: str          # "contents" | "exercises"
+    items: list[dict] = field(default_factory=list)
 
-    Outputs are saved to ctx.outputs_dir/{content_type}_outputs/.
-    Skips gracefully if the inputs directory does not exist.
-    Skips images that already have output unless overwrite=True.
+
+def transform(ctx: TopicContext, content_type: str = "contents") -> TransformResult:
+    """Read raw_response_*.md files from outputs and parse them into structured dicts.
+
+    For contents: returns dicts with keys: title, text, order.
+    For exercises: returns a flat list of question dicts (see parse_exercises_file).
+
+    Skips gracefully if the outputs directory does not exist.
     """
-    inputs_dir = ctx.topic_path / "inputs" / content_type
-    if not inputs_dir.is_dir():
-        print(f"[Transform] inputs/{content_type}/ not found, skipping.")
-        return
+    outputs_dir = ctx.outputs_dir / f"{content_type}_outputs"
+    md_files = sorted(outputs_dir.glob("raw_response_*.md")) if outputs_dir.is_dir() else []
 
-    images = list(list_image_files(str(ctx.topic_path), content_type))
-    if not images:
-        print(f"[Transform] No images found in inputs/{content_type}/, skipping.")
-        return
+    if not md_files:
+        print(f"[Transform] No .md files found in {outputs_dir.name}/, skipping {content_type}.")
+        return TransformResult(content_type=content_type)
 
-    print(f"\n[Transform] {ctx.topic} ({content_type}) — {len(images)} image(s)")
-    run_on_folder(str(ctx.topic_path), model=model, content_type=content_type, overwrite=overwrite)
+    print(f"\n[Transform] {ctx.topic} ({content_type}) — {len(md_files)} file(s)")
+
+    if content_type == "contents":
+        items = []
+        for order, md_path in enumerate(md_files, start=1):
+            text = md_path.read_text(encoding="utf-8").strip()
+            if not text:
+                print(f"  Skipping empty file: {md_path.name}")
+                continue
+            items.append({"title": md_path.name, "text": text, "order": order})
+        return TransformResult(content_type=content_type, items=items)
+
+    # exercises
+    items = []
+    for md_path in md_files:
+        questions = parse_exercises_file(md_path)
+        items.extend(questions)
+    return TransformResult(content_type=content_type, items=items)
 

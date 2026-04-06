@@ -13,7 +13,7 @@ from db.ops import (
     upsert_topic_content,
 )
 from .extract import TopicContext
-from .parse_exercises import parse_exercises_file
+from .transform import TransformResult
 
 
 def _build_topic(session: Session, ctx: TopicContext):
@@ -29,78 +29,65 @@ def _build_topic(session: Session, ctx: TopicContext):
     return get_or_create_topic(session, ctx.topic, course_node.id)
 
 
-def _load_contents(session: Session, ctx: TopicContext, topic) -> None:
-    """Upsert topic_content rows from outputs/contents_outputs/."""
-    contents_dir = ctx.outputs_dir / "contents_outputs"
-    md_files = sorted(contents_dir.glob("raw_response_*.md")) if contents_dir.is_dir() else []
-    if not md_files:
-        print(f"[Load] No .md files found in {contents_dir}, skipping contents.")
+def _load_contents(session: Session, ctx: TopicContext, topic, items: list[dict]) -> None:
+    """Upsert topic_content rows from pre-transformed content dicts."""
+    if not items:
+        print(f"[Load] No content items for {ctx.topic}, skipping contents.")
         return
 
-    print(f"[Load] {ctx.topic} — {len(md_files)} content page(s)")
-    for order, md_path in enumerate(md_files, start=1):
-        text = md_path.read_text(encoding="utf-8").strip()
-        if not text:
-            print(f"  Skipping empty file: {md_path.name}")
-            continue
-        upsert_topic_content(session, topic.id, title=md_path.name, text=text, order=order)
+    print(f"[Load] {ctx.topic} — {len(items)} content page(s)")
+    for item in items:
+        upsert_topic_content(session, topic.id, title=item["title"], text=item["text"], order=item["order"])
 
 
-def _load_exercises(session: Session, ctx: TopicContext, topic) -> None:
-    """Parse exercise outputs and upsert Question/ParagraphQuestion rows."""
-    exercises_dir = ctx.outputs_dir / "exercises_outputs"
-    md_files = sorted(exercises_dir.glob("raw_response_*.md")) if exercises_dir.is_dir() else []
-    if not md_files:
-        print(f"[Load] No .md files found in {exercises_dir}, skipping exercises.")
+def _load_exercises(session: Session, ctx: TopicContext, topic, items: list[dict]) -> None:
+    """Upsert Question and ParagraphQuestion rows from pre-parsed question dicts."""
+    if not items:
+        print(f"[Load] No exercise items for {ctx.topic}, skipping exercises.")
         return
 
-    print(f"[Load] {ctx.topic} — {len(md_files)} exercise file(s)")
-    for md_path in md_files:
-        questions = parse_exercises_file(md_path)
-        if not questions:
-            continue
+    print(f"[Load] {ctx.topic} — {len(items)} question(s)")
 
-        # Maintain insertion order of passages across this file.
-        paragraph_groups: dict[str, list] = {}
+    # Maintain insertion order of passages across all items.
+    paragraph_groups: dict[str, list] = {}
 
-        for q in questions:
-            q_obj = get_or_create_question(
-                session,
-                topic_id=topic.id,
-                question_text=q["question_text"],
-                question_type=q["question_type"],
-                options=q["options"],
-                correct_answers=q["correct_answers"],
-            )
-            if q["passage"] is not None:
-                passage = q["passage"]
-                if passage not in paragraph_groups:
-                    paragraph_groups[passage] = []
-                paragraph_groups[passage].append(q_obj.id)
+    for q in items:
+        q_obj = get_or_create_question(
+            session,
+            topic_id=topic.id,
+            question_text=q["question_text"],
+            question_type=q["question_type"],
+            options=q["options"],
+            correct_answers=q["correct_answers"],
+        )
+        if q["passage"] is not None:
+            passage = q["passage"]
+            if passage not in paragraph_groups:
+                paragraph_groups[passage] = []
+            paragraph_groups[passage].append(q_obj.id)
 
-        for passage, question_ids in paragraph_groups.items():
-            get_or_create_paragraph_question(
-                session,
-                passage=passage,
-                topic_id=topic.id,
-                question_ids=question_ids,
-            )
+    for passage, question_ids in paragraph_groups.items():
+        get_or_create_paragraph_question(
+            session,
+            passage=passage,
+            topic_id=topic.id,
+            question_ids=question_ids,
+        )
 
 
-def load(ctx: TopicContext, content_type: str = "contents") -> None:
-    """Upsert the full hierarchy and content rows for a TopicContext.
+def load(ctx: TopicContext, result: TransformResult) -> None:
+    """Upsert the full hierarchy and content rows for one TransformResult.
 
-    content_type: "contents" | "exercises" | "both"
+    Call once per content_type. For 'both', __main__.py calls this twice.
     """
     engine = create_engine(DATABASE_URL)
     with Session(engine) as session:
         topic = _build_topic(session, ctx)
 
-        if content_type in ("contents", "both"):
-            _load_contents(session, ctx, topic)
-
-        if content_type in ("exercises", "both"):
-            _load_exercises(session, ctx, topic)
+        if result.content_type == "contents":
+            _load_contents(session, ctx, topic, result.items)
+        elif result.content_type == "exercises":
+            _load_exercises(session, ctx, topic, result.items)
 
         session.commit()
         print("[Load] Done.")

@@ -34,10 +34,10 @@ uv run python -m glm_ocr --image <path-to-image>
 
 # ETL pipeline — load contents (default) or exercises into Postgres
 uv run python -m etl_pipeline --topic-path "C:/github/siva/SVC/GRADE_7/MATHEMATICS/VOLUME_1/INTEGERS"
-uv run python -m etl_pipeline --topic-path "..." --type exercises --skip-transform
-uv run python -m etl_pipeline --topic-path "..." --type both --skip-transform
+uv run python -m etl_pipeline --topic-path "..." --type exercises --skip-extract
+uv run python -m etl_pipeline --topic-path "..." --type both --skip-extract
 # --type: contents (default) | exercises | both
-# --skip-transform: skip OCR, use existing .md files
+# --skip-extract: skip OCR, use existing .md files
 # --skip-load: OCR only, don't write to DB
 # --overwrite: re-run OCR even if output already exists
 

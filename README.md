@@ -112,7 +112,7 @@ C:/github/siva/SVC/
                         └── exercises_prompt.md
 ```
 
-**Rules enforced by `etl_pipeline/extract.py`:**
+**Rules enforced by the ETL pipeline:**
 - The topic path must be exactly 5 levels deep: `<category>/<grade>/<subject>/<volume>/<topic>`
 - `prompts/contents_prompt.md` must exist before running OCR on contents; `exercises_prompt.md` for exercises
 - Images are discovered by extension (`.jpg`, `.jpeg`, `.png`) inside `inputs/contents/` or `inputs/exercises/`
@@ -129,7 +129,7 @@ uv run python populate_hierarchy.py --content-root C:/github/siva/SVC
 
 ### Step 2 — Load topic content and exercises (OCR → DB)
 
-Runs OCR on images and loads the resulting `.md` files into DB tables. Use `--type` to control what is processed:
+Runs OCR on images (extract), reads and parses the `.md` files (transform), then loads into DB tables (load). Use `--type` to control what is processed:
 
 | `--type` | OCR source | Loaded into |
 |---|---|---|
@@ -142,10 +142,10 @@ Runs OCR on images and loads the resulting `.md` files into DB tables. Use `--ty
 uv run python -m etl_pipeline --topic-path "SVC/GRADE_7/MATHEMATICS/VOLUME_1/INTEGERS"
 
 # Load exercises (OCR already done)
-uv run python -m etl_pipeline --topic-path "..." --type exercises --skip-transform
+uv run python -m etl_pipeline --topic-path "..." --type exercises --skip-extract
 
 # Load both contents and exercises from existing OCR output
-uv run python -m etl_pipeline --topic-path "..." --type both --skip-transform
+uv run python -m etl_pipeline --topic-path "..." --type both --skip-extract
 
 # OCR both types, then load exercises only
 uv run python -m etl_pipeline --topic-path "..." --type exercises
