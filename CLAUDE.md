@@ -23,13 +23,14 @@ uv sync
 # Apply migrations (run once after docker compose up, and after any model changes)
 uv run alembic upgrade head
 
-# Run OCR on a folder of images
+# Run OCR on a folder of images (default: contents)
 uv run python -m glm_ocr --folder <path-to-topic-folder>
+uv run python -m glm_ocr --folder <path-to-topic-folder> --type exercises
 
 # Run OCR on a single image
 uv run python -m glm_ocr --image <path-to-image>
 
-# OCR options: --model, --output-subdir (default: outputs), --overwrite (default: skip already processed)
+# OCR options: --model, --type (contents|exercises, default: contents), --overwrite (default: skip already processed)
 
 # Embed all topic_contents into pgvector
 uv run python -m embed_pipeline
@@ -59,11 +60,18 @@ SVC/                          ← category name
         └── VOLUME_1/         ← course_path_node (node_type=course)
             └── INTEGERS/     ← topic
                 ├── inputs/
-                │   └── IMG_*.jpg               ← source images (not loaded into DB)
+                │   ├── contents/               ← theory images (not loaded into DB)
+                │   │   └── IMG_*.jpg
+                │   └── exercises/              ← exercise images (not loaded into DB)
+                │       └── IMG_*.jpg
                 ├── outputs/
-                │   └── raw_response_IMG_*.md   ← topic_content (content_type=text), one per page
+                │   ├── contents_outputs/       ← topic_content (content_type=text), one per page
+                │   │   └── raw_response_IMG_*.md
+                │   └── exercises_outputs/      ← exercise OCR outputs
+                │       └── raw_response_IMG_*.md
                 └── prompts/
-                    └── prompt.md (or prompt.txt) ← required before running OCR
+                    ├── contents_prompt.md      ← required before running OCR on contents
+                    └── exercises_prompt.md     ← required before running OCR on exercises
 ```
 
 ## glm_ocr Package
@@ -72,11 +80,11 @@ SVC/                          ← category name
 
 ### Pipeline
 
-Sends the image (JPEG-encoded base64) to an Ollama multimodal model (default: `glm-ocr-optimized`) using the folder's `prompt.md` as the prompt. Output saved as `raw_response_<image>.md`.
+Sends the image (JPEG-encoded base64) to an Ollama multimodal model (default: `glm-ocr-optimized`) using the type-specific prompt. Output saved as `raw_response_<image>.md`.
 
 ### Key behaviors
 
-- Each topic folder **must** have a `prompt.md` or `prompt.txt` file — processing fails without it (`read_prompt_file` in `utils.py`).
+- Each topic folder **must** have `prompts/contents_prompt.md` (and `exercises_prompt.md` for exercises) — processing fails without it (`read_prompt_file` in `utils.py`).
 - Already-processed images are skipped by default; use `--overwrite` to reprocess.
 - `check_quality` in `utils.py` runs heuristic checks on the raw response looking for missing `### CONTENT` section headers and question patterns that indicate the model captured exercises instead of theory content.
 - Ollama must be running locally; no API keys or environment variables are needed.

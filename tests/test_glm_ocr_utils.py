@@ -59,38 +59,40 @@ class TestCheckQuality:
 
 
 class TestReadPromptFile:
-    def test_reads_prompt_md(self, tmp_path):
+    def test_reads_contents_prompt(self, tmp_path):
         prompts_dir = tmp_path / "prompts"
         prompts_dir.mkdir()
-        (prompts_dir / "prompt.md").write_text("Describe the image.", encoding="utf-8")
+        (prompts_dir / "contents_prompt.md").write_text("Describe the image.", encoding="utf-8")
 
-        result = read_prompt_file(str(tmp_path))
+        result = read_prompt_file(str(tmp_path), "contents")
         assert result == "Describe the image."
 
-    def test_reads_prompt_txt_when_no_md(self, tmp_path):
+    def test_reads_exercises_prompt(self, tmp_path):
         prompts_dir = tmp_path / "prompts"
         prompts_dir.mkdir()
-        (prompts_dir / "prompt.txt").write_text("OCR this page.", encoding="utf-8")
+        (prompts_dir / "exercises_prompt.md").write_text("OCR these exercises.", encoding="utf-8")
 
-        result = read_prompt_file(str(tmp_path))
-        assert result == "OCR this page."
+        result = read_prompt_file(str(tmp_path), "exercises")
+        assert result == "OCR these exercises."
 
-    def test_prefers_prompt_md_over_txt(self, tmp_path):
+    def test_defaults_to_contents_type(self, tmp_path):
         prompts_dir = tmp_path / "prompts"
         prompts_dir.mkdir()
-        (prompts_dir / "prompt.md").write_text("from md", encoding="utf-8")
-        (prompts_dir / "prompt.txt").write_text("from txt", encoding="utf-8")
+        (prompts_dir / "contents_prompt.md").write_text("contents prompt", encoding="utf-8")
 
         result = read_prompt_file(str(tmp_path))
-        assert result == "from md"
+        assert result == "contents prompt"
 
-    def test_returns_none_when_no_prompt(self, tmp_path):
-        (tmp_path / "prompts").mkdir()
-        result = read_prompt_file(str(tmp_path))
+    def test_returns_none_when_wrong_type(self, tmp_path):
+        prompts_dir = tmp_path / "prompts"
+        prompts_dir.mkdir()
+        (prompts_dir / "contents_prompt.md").write_text("contents prompt", encoding="utf-8")
+
+        result = read_prompt_file(str(tmp_path), "exercises")
         assert result is None
 
     def test_returns_none_when_prompts_dir_missing(self, tmp_path):
-        result = read_prompt_file(str(tmp_path))
+        result = read_prompt_file(str(tmp_path), "contents")
         assert result is None
 
 
@@ -100,46 +102,58 @@ class TestReadPromptFile:
 
 
 class TestListImageFiles:
-    def _make_inputs(self, tmp_path, filenames):
-        inputs_dir = tmp_path / "inputs"
-        inputs_dir.mkdir()
+    def _make_inputs(self, tmp_path, filenames, content_type="contents"):
+        inputs_dir = tmp_path / "inputs" / content_type
+        inputs_dir.mkdir(parents=True)
         for name in filenames:
             (inputs_dir / name).write_bytes(b"fake")
         return inputs_dir
 
     def test_yields_jpg_files(self, tmp_path):
         self._make_inputs(tmp_path, ["IMG_001.jpg", "IMG_002.jpg"])
-        result = list(list_image_files(str(tmp_path)))
+        result = list(list_image_files(str(tmp_path), "contents"))
         assert len(result) == 2
         assert all(f.endswith(".jpg") for f in result)
 
     def test_recognises_all_supported_extensions(self, tmp_path):
         names = ["a.jpg", "b.jpeg", "c.png", "d.webp", "e.bmp", "f.tiff"]
         self._make_inputs(tmp_path, names)
-        result = list(list_image_files(str(tmp_path)))
+        result = list(list_image_files(str(tmp_path), "contents"))
         assert len(result) == len(names)
 
     def test_skips_non_image_files(self, tmp_path):
         self._make_inputs(tmp_path, ["IMG_001.jpg", "notes.txt", "data.csv"])
-        result = list(list_image_files(str(tmp_path)))
+        result = list(list_image_files(str(tmp_path), "contents"))
         assert len(result) == 1
         assert result[0].endswith("IMG_001.jpg")
 
     def test_returns_sorted_order(self, tmp_path):
         self._make_inputs(tmp_path, ["IMG_003.jpg", "IMG_001.jpg", "IMG_002.jpg"])
-        result = list(list_image_files(str(tmp_path)))
+        result = list(list_image_files(str(tmp_path), "contents"))
         basenames = [os.path.basename(p) for p in result]
         assert basenames == sorted(basenames)
 
     def test_empty_inputs_yields_nothing(self, tmp_path):
-        (tmp_path / "inputs").mkdir()
-        result = list(list_image_files(str(tmp_path)))
+        (tmp_path / "inputs" / "contents").mkdir(parents=True)
+        result = list(list_image_files(str(tmp_path), "contents"))
         assert result == []
 
     def test_ignores_subdirectories(self, tmp_path):
-        inputs_dir = tmp_path / "inputs"
-        inputs_dir.mkdir()
-        (inputs_dir / "subdir").mkdir()  # directory inside inputs/
+        inputs_dir = tmp_path / "inputs" / "contents"
+        inputs_dir.mkdir(parents=True)
+        (inputs_dir / "subdir").mkdir()
         (inputs_dir / "IMG_001.jpg").write_bytes(b"fake")
+        result = list(list_image_files(str(tmp_path), "contents"))
+        assert len(result) == 1
+
+    def test_exercises_type_reads_correct_folder(self, tmp_path):
+        self._make_inputs(tmp_path, ["IMG_001.jpg"], content_type="contents")
+        self._make_inputs(tmp_path, ["EX_001.jpg", "EX_002.jpg"], content_type="exercises")
+        result = list(list_image_files(str(tmp_path), "exercises"))
+        assert len(result) == 2
+        assert all("EX_" in os.path.basename(f) for f in result)
+
+    def test_defaults_to_contents_type(self, tmp_path):
+        self._make_inputs(tmp_path, ["IMG_001.jpg"])
         result = list(list_image_files(str(tmp_path)))
         assert len(result) == 1

@@ -72,11 +72,18 @@ The ETL pipeline expects source content rooted at a content root directory with 
             └── <VOLUME>/           ← maps to: course_path_nodes (node_type=course)
                 └── <TOPIC>/        ← maps to: topics.title
                     ├── inputs/
-                    │   └── IMG_*.jpg               ← source images (never loaded into DB)
+                    │   ├── contents/               ← theory images (never loaded into DB)
+                    │   │   └── IMG_*.jpg
+                    │   └── exercises/              ← exercise images (never loaded into DB)
+                    │       └── IMG_*.jpg
                     ├── outputs/
-                    │   └── raw_response_IMG_*.md   ← topic_contents (content_type=text), one per page
+                    │   ├── contents_outputs/       ← topic_contents (content_type=text), one per page
+                    │   │   └── raw_response_IMG_*.md
+                    │   └── exercises_outputs/      ← exercise OCR outputs
+                    │       └── raw_response_IMG_*.md
                     └── prompts/
-                        └── prompt.md               ← required by OCR step (prompt.txt also accepted)
+                        ├── contents_prompt.md      ← required before running OCR on contents
+                        └── exercises_prompt.md     ← required before running OCR on exercises
 ```
 
 **Example with real data:**
@@ -89,21 +96,28 @@ C:/github/siva/SVC/
             └── VOLUME_1/
                 └── INTEGERS/
                     ├── inputs/
-                    │   ├── IMG_0001.jpg
-                    │   └── IMG_0002.jpg
+                    │   ├── contents/
+                    │   │   ├── IMG_0001.jpg
+                    │   │   └── IMG_0002.jpg
+                    │   └── exercises/
+                    │       └── IMG_0003.jpg
                     ├── outputs/
-                    │   ├── raw_response_IMG_0001.md
-                    │   └── raw_response_IMG_0002.md
+                    │   ├── contents_outputs/
+                    │   │   ├── raw_response_IMG_0001.md
+                    │   │   └── raw_response_IMG_0002.md
+                    │   └── exercises_outputs/
+                    │       └── raw_response_IMG_0003.md
                     └── prompts/
-                        └── prompt.md
+                        ├── contents_prompt.md
+                        └── exercises_prompt.md
 ```
 
 **Rules enforced by `etl_pipeline/extract.py`:**
 - The topic path must be exactly 5 levels deep: `<category>/<grade>/<subject>/<volume>/<topic>`
-- The `prompts/prompt.md` (or `prompt.txt`) file must exist before running OCR
-- Images are discovered by extension (`.jpg`, `.jpeg`, `.png`) inside `inputs/`
+- `prompts/contents_prompt.md` must exist before running OCR on contents; `exercises_prompt.md` for exercises
+- Images are discovered by extension (`.jpg`, `.jpeg`, `.png`) inside `inputs/contents/` or `inputs/exercises/`
 - Already-processed images are skipped unless `--overwrite` is passed
-- The `outputs/` directory is created automatically if it does not exist
+- Output directories are created automatically if they do not exist
 
 ### Step 1 — Populate hierarchy
 
@@ -131,7 +145,7 @@ uv run python -m etl_pipeline --topic-path "..." --skip-load
 uv run python -m etl_pipeline --topic-path "..." --overwrite
 ```
 
-**Prerequisites for OCR:** Ollama must be running with the `glm-ocr-optimized` model pulled, and the topic folder must have a `prompts/prompt.md`.
+**Prerequisites for OCR:** Ollama must be running with the `glm-ocr-optimized` model pulled, and the topic folder must have `prompts/contents_prompt.md` (and `exercises_prompt.md` for exercises).
 
 ### Step 3 — Generate embeddings
 
@@ -205,7 +219,7 @@ uv run python -m embed_pipeline
 Delete the bad `.md` file and re-run (only the missing file is regenerated):
 
 ```bash
-rm "SVC/.../outputs/raw_response_IMG_001.md"
+rm "SVC/.../outputs/contents_outputs/raw_response_IMG_001.md"
 uv run python -m etl_pipeline --topic-path "..."
 uv run python -m embed_pipeline --topic-id <uuid>
 ```

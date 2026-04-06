@@ -5,19 +5,20 @@ from .client import get_optimized_image_b64, send_streamed_request, save_raw_res
 from .utils import read_prompt_file, list_image_files, check_quality
 
 
-def run_on_folder(folder_path: str, model: str, output_subdir: str = "outputs", overwrite: bool = False) -> None:
-    """Process all images in `folder_path`, use folder-level prompt if present,
-    and save raw responses to `folder_path/<output_subdir>/raw_response_<image>.md`.
+def run_on_folder(folder_path: str, model: str, content_type: str = "contents", overwrite: bool = False) -> None:
+    """Process all images in `folder_path/inputs/{content_type}/`, using
+    `folder_path/prompts/{content_type}_prompt.md`, and saving outputs to
+    `folder_path/outputs/{content_type}_outputs/`.
     """
     folder = Path(folder_path)
     if not folder.is_dir():
         raise ValueError(f"Not a folder: {folder_path}")
 
-    folder_prompt = read_prompt_file(str(folder))
-    out_dir = folder / output_subdir
+    folder_prompt = read_prompt_file(str(folder), content_type)
+    out_dir = folder / "outputs" / f"{content_type}_outputs"
     os.makedirs(out_dir, exist_ok=True)
 
-    for img_path in list_image_files(str(folder)):
+    for img_path in list_image_files(str(folder), content_type):
         process_image(img_path, model, folder_prompt, str(out_dir), overwrite=overwrite)
 
 
@@ -76,15 +77,18 @@ def process_image(img_path: str, model: str, folder_prompt: Optional[str], out_d
     return saved
 
 
-def run_single_image(image_path: str, model: str, output_dir: Optional[str] = None, overwrite: bool = False) -> str:
-    """Process a single image file. If a folder-level prompt exists, it will be used.
+def run_single_image(image_path: str, model: str, overwrite: bool = False) -> str:
+    """Process a single image file.
 
-    The output will be written to `<image_folder>/<output_dir or 'outputs'>/` and the
-    saved filepath is returned.
+    Infers content_type from the image's parent folder name (e.g. 'contents' or 'exercises').
+    The topic root is three levels up: <topic>/inputs/{content_type}/<image>.
+    Prompt is read from <topic>/prompts/{content_type}_prompt.md.
+    Output is written to <topic>/outputs/{content_type}_outputs/.
     """
-    image_path = str(image_path)
-    topic_root = Path(image_path).parent.parent  # image is in <topic>/inputs/
-    folder_prompt = read_prompt_file(str(topic_root))
-    out_dir = output_dir if (output_dir and os.path.isabs(output_dir)) else os.path.join(str(topic_root), output_dir or "outputs")
+    img = Path(image_path)
+    content_type = img.parent.name           # "contents" or "exercises"
+    topic_root = img.parent.parent.parent    # <topic>/inputs/{content_type}/
+    folder_prompt = read_prompt_file(str(topic_root), content_type)
+    out_dir = topic_root / "outputs" / f"{content_type}_outputs"
     os.makedirs(out_dir, exist_ok=True)
-    return process_image(image_path, model, folder_prompt, out_dir, overwrite=overwrite)
+    return process_image(str(img), model, folder_prompt, str(out_dir), overwrite=overwrite)

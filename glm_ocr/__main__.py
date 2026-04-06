@@ -9,15 +9,15 @@ def main(argv=None):
     group.add_argument("--folder", help="Path to folder containing images to process")
     group.add_argument("--image", help="Path to a single image to process")
     parser.add_argument("--model", default="glm-ocr-optimized", help="Model name to use")
-    parser.add_argument("--output-subdir", default="outputs", help="Subfolder name for outputs when processing a folder")
+    parser.add_argument("--type", default="contents", choices=["contents", "exercises"], help="Which input type to process (default: contents)")
     parser.add_argument("--overwrite", action="store_true", help="Overwrite existing output files (default: skip already processed images)")
 
     args = parser.parse_args(argv)
 
     if args.folder:
-        run_on_folder(args.folder, args.model, output_subdir=args.output_subdir, overwrite=args.overwrite)
+        run_on_folder(args.folder, args.model, content_type=args.type, overwrite=args.overwrite)
     elif args.image:
-        saved = run_single_image(args.image, args.model, output_dir=args.output_subdir, overwrite=args.overwrite)
+        saved = run_single_image(args.image, args.model, overwrite=args.overwrite)
         print(f"Saved: {saved}")
 
 
