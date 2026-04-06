@@ -20,6 +20,7 @@ os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from llama_index.core import Settings
+from llama_index.core.prompts import PromptTemplate
 from llama_index.core.query_engine import RetrieverQueryEngine
 from llama_index.core.response_synthesizers import CompactAndRefine
 from llama_index.core.vector_stores.types import (
@@ -111,9 +112,38 @@ def main() -> None:
     llm = make_llm(RAG_MODEL, request_timeout=LLM_REQUEST_TIMEOUT, context_window=LLM_CONTEXT_WINDOW, thinking=LLM_THINKING)
     Settings.llm = llm
 
+    _QA_TEMPLATE = PromptTemplate(
+        "You are an educational assistant. Answer the question using ONLY the provided context.\n"
+        "Use the EXACT wording and definitions from the context wherever possible — do NOT paraphrase or reword definitions.\n"
+        "If the context contains a direct definition or statement that answers the question, quote it verbatim.\n"
+        "If the context does not contain the answer, say 'I don't know based on the available content'.\n\n"
+        "Context:\n"
+        "---------------------\n"
+        "{context_str}\n"
+        "---------------------\n\n"
+        "Question: {query_str}\n"
+        "Answer: "
+    )
+
+    _REFINE_TEMPLATE = PromptTemplate(
+        "You are an educational assistant. The original question is: {query_str}\n"
+        "We have an existing answer: {existing_answer}\n"
+        "Refine the answer using the additional context below, preserving exact wording from the source material.\n"
+        "If the new context is not useful, return the existing answer unchanged.\n\n"
+        "Additional context:\n"
+        "---------------------\n"
+        "{context_msg}\n"
+        "---------------------\n\n"
+        "Refined answer: "
+    )
+
     query_engine = RetrieverQueryEngine(
         retriever=retriever,
-        response_synthesizer=CompactAndRefine(llm=llm),
+        response_synthesizer=CompactAndRefine(
+            llm=llm,
+            text_qa_template=_QA_TEMPLATE,
+            refine_template=_REFINE_TEMPLATE,
+        ),
     )
 
     response = query_engine.query(args.query)
