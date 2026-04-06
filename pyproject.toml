@@ -13,4 +13,15 @@ dependencies = [
     "llama-index-core>=0.12",
     "llama-index-vector-stores-postgres>=0.3",
     "llama-index-embeddings-huggingface>=0.4",
+    "llama-index>=0.14.20",
+    "llama-index-llms-ollama>=0.10.1",
 ]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+

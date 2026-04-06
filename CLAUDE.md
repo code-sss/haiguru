@@ -46,7 +46,7 @@ uv run python -m embed_pipeline --topic-id <uuid>
   - Connect to server: host=`haiguru-postgres`, port=`5432`, user=`haiguru`, password=`haiguru_pass`
 - Both run in Docker network `haiguru-net`
 - Database: `haiguru_db`, user: `haiguru`, password: `haiguru_pass`
-- `DATABASE_URL` is hardcoded in `db/create_tables.py` — no env file needed
+- `DATABASE_URL` is read from `.env` via `config.py`
 
 ## Data Source
 

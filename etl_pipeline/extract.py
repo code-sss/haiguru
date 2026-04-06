@@ -9,7 +9,7 @@ from glm_ocr.utils import list_image_files
 @dataclass
 class TopicContext:
     """All metadata and paths derived from a topic folder."""
-    category_name: str   # SVC root folder name, e.g. "SVC"
+    category_name: str   # content root folder name, e.g. "SVC"
     grade: str           # e.g. "GRADE_7"
     subject: str         # e.g. "MATHEMATICS"
     volume: str          # e.g. "VOLUME_1"
@@ -22,7 +22,7 @@ class TopicContext:
 def extract(topic_path: str) -> TopicContext:
     """Validate a topic folder and return a TopicContext.
 
-    The folder must be exactly 4 levels deep:
+    The folder must be exactly 5 levels deep:
         <category>/<grade>/<subject>/<volume>/<topic>
 
     The last 5 parts of the path are used — no separate root argument needed.

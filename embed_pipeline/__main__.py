@@ -103,6 +103,8 @@ def main():
         password=url.password,
         table_name=TABLE_NAME,
         embed_dim=EMBED_DIM,
+        hybrid_search=True,
+        text_search_config="english",
         hnsw_kwargs={
             "hnsw_m": 16,
             "hnsw_ef_construction": 64,

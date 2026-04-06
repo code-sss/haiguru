@@ -24,7 +24,7 @@ def get_or_create_node(
 ) -> CoursePathNode:
     obj = (
         session.query(CoursePathNode)
-        .filter_by(name=name, node_type=node_type, category_id=category_id)
+        .filter_by(name=name, node_type=node_type, category_id=category_id, parent_id=parent_id)
         .first()
     )
     if not obj:

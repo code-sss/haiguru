@@ -1,11 +1,11 @@
-"""Populate course path node hierarchy and topics from the SVC folder structure.
+"""Populate course path node hierarchy and topics from the content root folder structure.
 
-Walks <svc-root>/<category>/<grade>/<subject>/<volume>/<topic> and upserts
+Walks <content-root>/<category>/<grade>/<subject>/<volume>/<topic> and upserts
 all rows into categories, course_path_nodes, and topics.
 No topic_contents are created.
 
 Usage:
-    uv run python populate_hierarchy.py --svc-root C:/github/siva/SVC
+    uv run python populate_hierarchy.py --content-root C:/github/siva/SVC
 """
 
 import argparse
@@ -26,10 +26,10 @@ def _is_topic_dir(path: Path) -> bool:
     return bool(children & _TOPIC_SUBFOLDERS)
 
 
-def populate(svc_root: str) -> None:
-    root = Path(svc_root).resolve()
+def populate(content_root: str) -> None:
+    root = Path(content_root).resolve()
     if not root.is_dir():
-        raise ValueError(f"svc-root does not exist: {root}")
+        raise ValueError(f"content-root does not exist: {root}")
 
     engine = create_engine(DATABASE_URL)
 
@@ -76,14 +76,14 @@ def populate(svc_root: str) -> None:
 def main(argv=None):
     parser = argparse.ArgumentParser(prog="populate_hierarchy")
     parser.add_argument(
-        "--svc-root",
+        "--content-root",
         required=True,
-        help="Path to the SVC root folder (e.g. C:/github/siva/SVC)",
+        help="Path to the content root folder (e.g. C:/github/siva/SVC)",
     )
     args = parser.parse_args(argv)
     print(f"\n=== Populate Hierarchy ===")
-    print(f"Root: {args.svc_root}\n")
-    populate(args.svc_root)
+    print(f"Root: {args.content_root}\n")
+    populate(args.content_root)
 
 
 if __name__ == "__main__":

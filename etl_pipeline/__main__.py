@@ -19,7 +19,7 @@ from .load import load
 
 def main(argv=None):
     parser = argparse.ArgumentParser(prog="python -m etl_pipeline")
-    parser.add_argument("--topic-path", required=True, help="Path to the topic folder (e.g. .../SVC/GRADE_7/MATHEMATICS/VOLUME_1/INTEGERS)")
+    parser.add_argument("--topic-path", required=True, help="Path to the topic folder (e.g. .../GRADE_7/MATHEMATICS/VOLUME_1/INTEGERS under the content root)")
     parser.add_argument("--model", default="glm-ocr-optimized", help="Ollama OCR model name")
     parser.add_argument("--overwrite", action="store_true", help="Re-run OCR even for already-processed images")
     parser.add_argument("--skip-transform", action="store_true", help="Skip OCR step")
