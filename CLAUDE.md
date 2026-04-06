@@ -17,8 +17,8 @@ docker compose up -d
 # Install dependencies
 uv sync
 
-# Create all tables (run once after docker compose up)
-uv run python -m db.create_tables
+# Apply migrations (run once after docker compose up, and after any model changes)
+uv run alembic upgrade head
 
 # Run OCR on a folder of images
 uv run python -m glm_ocr --folder <path-to-topic-folder>
@@ -51,8 +51,7 @@ SVC/                          ← category name
             └── INTEGERS/     ← topic
                 ├── prompt.md (or prompt.txt) ← required before running OCR
                 ├── outputs/
-                │   ├── raw_response_IMG_*.md   ← topic_content (content_type=text), one per page
-                │   └── formatted_response_*.md ← richer formatted version (use this if available)
+                │   └── raw_response_IMG_*.md   ← topic_content (content_type=text), one per page
                 └── IMG_*.jpg                   ← source images (not loaded into DB)
 ```
 
@@ -60,10 +59,9 @@ SVC/                          ← category name
 
 `glm_ocr/` is a local OCR pipeline that processes textbook images into Markdown using locally-running Ollama models. It is **not** listed in `pyproject.toml` dependencies — it requires `Pillow`, `ollama`, and `requests` separately.
 
-### Two-stage pipeline
+### Pipeline
 
-1. **OCR stage** (`client.send_streamed_request`): sends the image (JPEG-encoded base64) to an Ollama multimodal model (default: `glm-ocr-optimized`) using the folder's `prompt.md` as the prompt. Output saved as `raw_response_<image>.md`.
-2. **Format stage** (`runner._format_response`): sends the raw text to `qwen3.5:9b` (hardcoded in `runner.py:FORMAT_MODEL`) to reformat it as structured Markdown. Output saved as `formatted_response_<image>.md`.
+Sends the image (JPEG-encoded base64) to an Ollama multimodal model (default: `glm-ocr-optimized`) using the folder's `prompt.md` as the prompt. Output saved as `raw_response_<image>.md`.
 
 ### Key behaviors
 
@@ -75,7 +73,12 @@ SVC/                          ← category name
 ## Data Model
 
 Tables are defined in `db/models.py` using SQLAlchemy declarative style.
-Schema is created via `Base.metadata.create_all()` — no Alembic.
+Schema is managed via Alembic — after changing models, run:
+
+```bash
+uv run alembic revision --autogenerate -m "describe the change"
+uv run alembic upgrade head
+```
 
 ### Table hierarchy
 

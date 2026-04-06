@@ -40,6 +40,10 @@ class Category(Base):
         default="structured",
     )
 
+    __table_args__ = (
+        UniqueConstraint("name", name="uq_categories_name"),
+    )
+
 
 class CoursePathNode(Base):
     __tablename__ = "course_path_nodes"
@@ -57,6 +61,10 @@ class CoursePathNode(Base):
     order = Column(Integer, nullable=True)
     owner_type = Column(String, nullable=False, default="platform")
     owner_id = Column(String, nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("name", "node_type", "category_id", "parent_id", name="uq_course_path_nodes"),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -77,6 +85,10 @@ class Topic(Base):
     owner_type = Column(String, nullable=False, default="platform")
     owner_id = Column(String, nullable=True)
 
+    __table_args__ = (
+        UniqueConstraint("title", "course_path_node_id", name="uq_topics_title_node"),
+    )
+
 
 class TopicContent(Base):
     __tablename__ = "topic_contents"
@@ -92,6 +104,10 @@ class TopicContent(Base):
     text = Column(String, nullable=True)
     order = Column(Integer, nullable=False)
     description = Column(String, nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("topic_id", "title", name="uq_topic_contents_topic_title"),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -126,7 +142,6 @@ class Question(Base):
     )
     tags = Column(JSONB, nullable=True)
     image_url = Column(String, nullable=True)
-    # which topic this question belongs to
     topic_id = Column(UUID(as_uuid=True), ForeignKey("topics.id"), nullable=True)
 
 

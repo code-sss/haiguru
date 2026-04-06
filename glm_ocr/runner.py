@@ -1,7 +1,7 @@
 import os
 from pathlib import Path
 from typing import Optional
-from .client import get_optimized_image_b64, send_streamed_request, send_text_request, save_raw_response
+from .client import get_optimized_image_b64, send_streamed_request, save_raw_response
 from .utils import read_prompt_file, list_image_files, check_quality
 
 
@@ -19,30 +19,6 @@ def run_on_folder(folder_path: str, model: str, output_subdir: str = "outputs", 
 
     for img_path in list_image_files(str(folder)):
         process_image(img_path, model, folder_prompt, str(out_dir), overwrite=overwrite)
-
-
-FORMAT_MODEL = "qwen3.5:9b"
-
-FORMAT_PROMPT = """Format the following extracted text as structured Markdown.
-
-- Page title (short ALL-CAPS line, no colon) → `# Title`
-- Section headings (ALL-CAPS ending with `:`) → `## Heading`
-- Body paragraphs → plain text, blank line between each
-- Bullets → `- item`, numbered items → `1. item`
-- Math expressions → inline LaTeX: `$expression$`
-- Number lines / diagrams → ASCII art in a code fence
-
-Do not change any words. Only add Markdown structure.
-
-<text>
-{raw_text}
-</text>"""
-
-
-def _format_response(raw_text: str) -> str:
-    prompt = FORMAT_PROMPT.format(raw_text=raw_text)
-    result = send_text_request(FORMAT_MODEL, prompt)
-    return _strip_outer_code_fence(result)
 
 
 def _strip_outer_code_fence(text: str) -> str:
@@ -87,13 +63,7 @@ def process_image(img_path: str, model: str, folder_prompt: Optional[str], out_d
 
     full_response = _strip_outer_code_fence(full_response)
     saved = save_raw_response(out_dir, filename, full_response)
-    print(f"Saved raw: {saved}")
-
-    print(f"Formatting with {FORMAT_MODEL}...")
-    formatted = _format_response(full_response)
-    fmt_filename = f"formatted_response_{os.path.splitext(img_name)[0]}.md"
-    fmt_saved = save_raw_response(out_dir, fmt_filename, formatted)
-    print(f"Saved formatted: {fmt_saved}")
+    print(f"Saved: {saved}")
 
     warnings = check_quality(full_response)
     if warnings:
