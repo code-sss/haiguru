@@ -29,7 +29,7 @@ from llama_index.core.vector_stores.types import (
     MetadataFilter,
     MetadataFilters,
 )
-from config import EMBED_DIM, EMBED_MODEL, LLM_CONTEXT_WINDOW, RAG_MODEL, LLM_REQUEST_TIMEOUT, LLM_THINKING, MODEL_PATH, RERANK_MODEL
+from config import EMBED_DIM, EMBED_MODEL, EMBED_DEVICE, LLM_CONTEXT_WINDOW, RAG_MODEL, LLM_REQUEST_TIMEOUT, LLM_THINKING, MODEL_PATH, RERANK_MODEL
 from llm_factory import make_llm
 from reranker_factory import make_reranker
 from rag.retriever import build_retriever
@@ -125,7 +125,7 @@ def main() -> None:
     if args.retrieve_only:
         nodes = retriever.retrieve(result.rewritten_query)
         if RERANK_MODEL:
-            reranker = make_reranker(RERANK_MODEL, top_n=args.top_k, model_path=MODEL_PATH)
+            reranker = make_reranker(RERANK_MODEL, top_n=args.top_k, model_path=MODEL_PATH, device=EMBED_DEVICE)
             from llama_index.core.schema import QueryBundle
             nodes = reranker.postprocess_nodes(nodes, query_bundle=QueryBundle(args.query))
         _print_nodes(nodes)
@@ -215,7 +215,7 @@ def main() -> None:
     # both the precise question and an explicit signal of what to do.
     nodes = retriever.retrieve(result.rewritten_query)
     if RERANK_MODEL:
-        reranker = make_reranker(RERANK_MODEL, top_n=args.top_k, model_path=MODEL_PATH)
+        reranker = make_reranker(RERANK_MODEL, top_n=args.top_k, model_path=MODEL_PATH, device=EMBED_DEVICE)
         from llama_index.core.schema import QueryBundle
         nodes = reranker.postprocess_nodes(nodes, query_bundle=QueryBundle(args.query))
     synthesis_query = f"[{result.intent}] {args.query}"

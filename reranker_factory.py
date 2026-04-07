@@ -21,10 +21,10 @@ from llama_index.core.schema import NodeWithScore, QueryBundle
 
 
 class _LocalCrossEncoderReranker(BaseNodePostprocessor):
-    def __init__(self, model: str, top_n: int, model_path: str | None = None):
+    def __init__(self, model: str, top_n: int, model_path: str | None = None, device: str = "cpu"):
         super().__init__()
         from sentence_transformers import CrossEncoder
-        self._encoder = CrossEncoder(model, **({"cache_folder": model_path} if model_path else {}))
+        self._encoder = CrossEncoder(model, device=device, **({"cache_folder": model_path} if model_path else {}))
         self._top_n = top_n
 
     @classmethod
@@ -139,6 +139,7 @@ def make_reranker(
     *,
     top_n: int,
     model_path: str | None = None,
+    device: str = "cpu",
 ) -> BaseNodePostprocessor:
     """Return a reranker node post-processor for the given model spec.
 
@@ -146,12 +147,14 @@ def make_reranker(
         model_spec:  Model identifier with optional provider prefix.
         top_n:       Number of nodes to keep after reranking.
         model_path:  Local cache directory for sentence-transformers models.
+        device:      Torch device string (e.g. 'cpu', 'cuda', 'mps').
     """
     if "://" not in model_spec:
         return _LocalCrossEncoderReranker(
             model=model_spec,
             top_n=top_n,
             model_path=model_path,
+            device=device,
         )
 
     provider, model_name = model_spec.split("://", 1)

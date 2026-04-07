@@ -25,7 +25,7 @@ from llama_index.core.vector_stores.types import MetadataFilters
 from llama_index.vector_stores.postgres import PGVectorStore
 from sqlalchemy import make_url
 
-from config import DATABASE_URL, EMBED_DIM, EMBED_MODEL, MODEL_PATH
+from config import DATABASE_URL, EMBED_DEVICE, EMBED_DIM, EMBED_MODEL, MODEL_PATH
 from llm_factory import make_embed_model
 
 TABLE_NAME = "topic_content_vectors"
@@ -36,7 +36,7 @@ _embed_model_initialised = False
 def _ensure_embed_model() -> None:
     global _embed_model_initialised
     if not _embed_model_initialised:
-        Settings.embed_model = make_embed_model(EMBED_MODEL, device="cpu", model_path=MODEL_PATH)
+        Settings.embed_model = make_embed_model(EMBED_MODEL, device=EMBED_DEVICE, model_path=MODEL_PATH)
         _embed_model_initialised = True
 
 
