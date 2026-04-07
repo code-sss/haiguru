@@ -16,7 +16,11 @@ LLM_CONTEXT_WINDOW: int = int(os.getenv("LLM_CONTEXT_WINDOW", "4096"))
 LLM_REQUEST_TIMEOUT: float = float(os.getenv("LLM_REQUEST_TIMEOUT", "360"))
 LLM_THINKING: bool = os.getenv("LLM_THINKING", "false").lower() in ("1", "true", "yes")
 
+RERANK_MODEL: str = os.getenv("RERANK_MODEL", "")  # empty = disabled
+
 # API keys for external LLM providers (optional — only needed when using that provider)
 OPENAI_API_KEY: str | None = os.getenv("OPENAI_API_KEY")
 ANTHROPIC_API_KEY: str | None = os.getenv("ANTHROPIC_API_KEY")
 TOGETHER_API_KEY: str | None = os.getenv("TOGETHER_API_KEY")
+COHERE_API_KEY: str | None = os.getenv("COHERE_API_KEY")
+JINA_API_KEY: str | None = os.getenv("JINA_API_KEY")

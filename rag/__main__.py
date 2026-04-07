@@ -29,8 +29,9 @@ from llama_index.core.vector_stores.types import (
     MetadataFilter,
     MetadataFilters,
 )
-from config import EMBED_DIM, EMBED_MODEL, LLM_CONTEXT_WINDOW, RAG_MODEL, LLM_REQUEST_TIMEOUT, LLM_THINKING
+from config import EMBED_DIM, EMBED_MODEL, LLM_CONTEXT_WINDOW, RAG_MODEL, LLM_REQUEST_TIMEOUT, LLM_THINKING, MODEL_PATH, RERANK_MODEL
 from llm_factory import make_llm
+from reranker_factory import make_reranker
 from rag.retriever import build_retriever
 from rag.query_rewriter import rewrite as rewrite_query, RewriteResult
 
@@ -97,6 +98,7 @@ def main() -> None:
     print(f"\nQuery        : {args.query!r}")
     print(f"Embed model  : {EMBED_MODEL} (dim={EMBED_DIM}, device=cpu)")
     print(f"RAG model    : {RAG_MODEL} (context_window={LLM_CONTEXT_WINDOW}, timeout={LLM_REQUEST_TIMEOUT}s, thinking={LLM_THINKING})")
+    print(f"Rerank model : {RERANK_MODEL or '(disabled)'}")
     print(f"Top-k        : {args.top_k}")
     if filters:
         print(f"Filters      : {filters}")
@@ -117,10 +119,15 @@ def main() -> None:
         print(f"\n{result.reject_reason}")
         return
 
-    retriever = build_retriever(top_k=args.top_k, filters=filters)
+    fetch_k = args.top_k * 3 if RERANK_MODEL else args.top_k
+    retriever = build_retriever(top_k=fetch_k, filters=filters)
 
     if args.retrieve_only:
         nodes = retriever.retrieve(result.rewritten_query)
+        if RERANK_MODEL:
+            reranker = make_reranker(RERANK_MODEL, top_n=args.top_k, model_path=MODEL_PATH)
+            from llama_index.core.schema import QueryBundle
+            nodes = reranker.postprocess_nodes(nodes, query_bundle=QueryBundle(args.query))
         _print_nodes(nodes)
         return
 
@@ -203,9 +210,14 @@ def main() -> None:
     refine_template = _REFINE_TEMPLATES.get(result.intent, _REFINE_TEMPLATES["explanation"])
 
     # Retrieve with the rewritten query (keyword-dense, better recall).
+    # Rerank against the original query (natural language, better precision).
     # Synthesise with the original query prefixed by intent so the LLM gets
     # both the precise question and an explicit signal of what to do.
     nodes = retriever.retrieve(result.rewritten_query)
+    if RERANK_MODEL:
+        reranker = make_reranker(RERANK_MODEL, top_n=args.top_k, model_path=MODEL_PATH)
+        from llama_index.core.schema import QueryBundle
+        nodes = reranker.postprocess_nodes(nodes, query_bundle=QueryBundle(args.query))
     synthesis_query = f"[{result.intent}] {args.query}"
 
     synthesizer = CompactAndRefine(

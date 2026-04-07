@@ -55,7 +55,7 @@ uv run python -m rag "prime numbers" --grade GRADE_7 --subject MATHEMATICS --ret
 
 ## RAG Pipeline internals
 
-The `rag` module has three stages:
+The `rag` module has four stages:
 
 1. **Query rewriting + intent classification + safety** (`rag/query_rewriter.py`) — one LLM call that returns a `RewriteResult`:
    - `rewritten_query`: keyword-dense version used for retrieval
@@ -63,9 +63,14 @@ The `rag` module has three stages:
    - `safe`: `False` if the query is rejected (profanity, prompt injection, harmful content); off-topic benign questions pass through
    - `reject_reason`: friendly message shown to the user when `safe=False`
 
-2. **Hybrid retrieval** (`rag/retriever.py`) — fused dense (HNSW cosine) + sparse (tsvector) search using the rewritten query
+2. **Hybrid retrieval** (`rag/retriever.py`) — fused dense (HNSW cosine) + sparse (tsvector) search using the rewritten query; fetches `top_k × 3` candidates when reranking is active
 
-3. **Synthesis** (`rag/__main__.py`) — `CompactAndRefine` with an intent-specific prompt template; the synthesiser receives `[intent] original_query` (not the rewritten query) to preserve exact semantic precision
+3. **Reranking** (`reranker_factory.py`) — cross-encoder reranks the fused candidates against the **original** query (natural language), returns top `top_k`. Controlled by `RERANK_MODEL` in `.env` (empty = disabled). Provider routing follows the same prefix convention as `llm_factory.py`:
+   - plain name → local `sentence-transformers` `CrossEncoder`, cached in `MODEL_PATH`
+   - `cohere://` → Cohere Rerank API
+   - `jina://` → Jina AI Rerank API
+
+4. **Synthesis** (`rag/__main__.py`) — `CompactAndRefine` with an intent-specific prompt template; the synthesiser receives `[intent] original_query` (not the rewritten query) to preserve exact semantic precision
 
 Adding a new intent requires: a new example in `_REWRITE_PROMPT` (query_rewriter.py) and new entries in `_QA_TEMPLATES` and `_REFINE_TEMPLATES` (\_\_main\_\_.py). Unknown intents fall back to `"explanation"`.
 
@@ -132,6 +137,14 @@ Three pipelines use an LLM. Each supports a provider prefix on the model name:
 | `anthropic://` | Anthropic | `ANTHROPIC_API_KEY` |
 | `together://` | TogetherAI (OpenAI-compat) | `TOGETHER_API_KEY` |
 
+The **reranker** (`RERANK_MODEL`) has its own prefix routing in `reranker_factory.py`:
+
+| Prefix | Provider | Required env var |
+|---|---|---|
+| *(none)* | Local cross-encoder (sentence-transformers, `MODEL_PATH`) | — |
+| `cohere://` | Cohere Rerank API | `COHERE_API_KEY` |
+| `jina://` | Jina AI Rerank API | `JINA_API_KEY` |
+
 ### Environment variables (`config.py`)
 
 | Variable | Used by | Default |
@@ -139,9 +152,12 @@ Three pipelines use an LLM. Each supports a provider prefix on the model name:
 | `TRANSFORM_MODEL` | Exercise parsing LLM | `qwen3.5:9b` (Ollama) |
 | `RAG_MODEL` | RAG answer synthesis LLM | `qwen3.5:9b` (Ollama) |
 | `EMBED_MODEL` | Embedding model | `BAAI/bge-m3` (HuggingFace local) |
+| `RERANK_MODEL` | Reranker model (empty = disabled) | `cross-encoder/ms-marco-MiniLM-L-6-v2` |
 | `OPENAI_API_KEY` | OpenAI calls | — |
 | `ANTHROPIC_API_KEY` | Anthropic calls | — |
 | `TOGETHER_API_KEY` | TogetherAI calls | — |
+| `COHERE_API_KEY` | Cohere reranker | — |
+| `JINA_API_KEY` | Jina reranker | — |
 
 ### Examples
 
@@ -155,6 +171,12 @@ RAG_MODEL=anthropic://claude-opus-4-5
 # Use OpenAI embeddings (also update EMBED_DIM to match, e.g. 3072)
 EMBED_MODEL=openai://text-embedding-3-large
 EMBED_DIM=3072
+
+# Use Cohere reranker
+RERANK_MODEL=cohere://rerank-english-v3.0
+
+# Disable reranking
+RERANK_MODEL=
 ```
 
 The `TRANSFORM_MODEL` can also be overridden per-run:
@@ -162,7 +184,7 @@ The `TRANSFORM_MODEL` can also be overridden per-run:
 uv run python -m etl_pipeline --topic-path "..." --type exercises --transform-model "together://meta-llama/Llama-3-70b-chat-hf"
 ```
 
-Routing logic lives in `llm_factory.py` (LlamaIndex objects for RAG/embed) and `glm_ocr/client.py` (`send_text_request_streaming` for exercise parsing).
+Routing logic lives in `llm_factory.py` (LlamaIndex objects for RAG/embed), `reranker_factory.py` (reranker), and `glm_ocr/client.py` (`send_text_request_streaming` for exercise parsing).
 
 ## Data Model
 

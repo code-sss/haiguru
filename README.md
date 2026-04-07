@@ -181,7 +181,7 @@ The embed pipeline stores vectors with `hybrid_search=True`, which adds a `text_
 
 ### Step 4 — Query with the hybrid RAG pipeline
 
-The `rag` module combines dense vector search (HNSW cosine) and sparse full-text search (tsvector / BM25), fuses results with relative-score re-ranking, and optionally synthesises an answer via Ollama.
+The `rag` module combines dense vector search (HNSW cosine) and sparse full-text search (tsvector / BM25), fuses results with relative-score re-ranking, optionally reranks the fused results with a cross-encoder, and optionally synthesises an answer via Ollama.
 
 ```bash
 # Full Q&A — retrieve + synthesise with qwen3.5:9b
@@ -208,6 +208,8 @@ uv run python -m rag "negative numbers" --topic-id <uuid>
 
 The LLM model for synthesis defaults to `qwen3.5:9b` via Ollama (set `RAG_MODEL` in `.env` to override — see [LLM Providers](#llm-providers) for OpenAI/Anthropic/TogetherAI options). Ollama must be running for synthesis; `--retrieve-only` works without it.
 
+Reranking is enabled by default using a local `cross-encoder/ms-marco-MiniLM-L-6-v2` model (see `RERANK_MODEL` in [LLM Providers](#llm-providers)). Set `RERANK_MODEL=` (empty) to disable.
+
 `rag.retriever.build_retriever()` is also importable for use in other parts of the project.
 
 ---
@@ -223,6 +225,15 @@ Three pipelines support pluggable LLM/embedding providers via a prefix on the mo
 | `anthropic://` | Anthropic | `ANTHROPIC_API_KEY` |
 | `together://` | TogetherAI (OpenAI-compatible) | `TOGETHER_API_KEY` |
 
+The **reranker** (`RERANK_MODEL`) has its own provider routing:
+
+| Value | Provider | Required env var |
+|---|---|---|
+| `cross-encoder/<model>` | Local cross-encoder (sentence-transformers, stored in `MODEL_PATH`) | — |
+| `cohere://<model>` | Cohere Rerank API | `COHERE_API_KEY` |
+| `jina://<model>` | Jina AI Rerank API | `JINA_API_KEY` |
+| *(empty)* | Reranking disabled | — |
+
 Set the key(s) in `.env`, then point the model variable at the provider:
 
 ```ini
@@ -230,6 +241,8 @@ Set the key(s) in `.env`, then point the model variable at the provider:
 OPENAI_API_KEY=sk-...
 ANTHROPIC_API_KEY=sk-ant-...
 TOGETHER_API_KEY=...
+COHERE_API_KEY=...   # only needed for cohere:// reranker
+JINA_API_KEY=...     # only needed for jina:// reranker
 
 # Use GPT-4o for exercise parsing and RAG synthesis
 TRANSFORM_MODEL=openai://gpt-4o
@@ -238,6 +251,12 @@ RAG_MODEL=openai://gpt-4o
 # Use OpenAI embeddings (update EMBED_DIM to match the model)
 EMBED_MODEL=openai://text-embedding-3-large
 EMBED_DIM=3072
+
+# Use Cohere reranker instead of local cross-encoder
+RERANK_MODEL=cohere://rerank-english-v3.0
+
+# Disable reranking entirely
+RERANK_MODEL=
 ```
 
 `TRANSFORM_MODEL` can also be overridden per-run without changing `.env`:
@@ -381,7 +400,18 @@ Rejection messages are friendly and conversational. Parse errors fail safe (reje
 
 #### 5. Reranking
 
-None. After RSF fusion, top-k nodes go directly to the `CompactAndRefine` response synthesiser. `CompactAndRefine` is a response strategy (iterative refinement over chunks), not a reranker.
+Yes — a cross-encoder reranker runs after RSF fusion, controlled by `RERANK_MODEL` in `.env`.
+
+The retrieval phase fetches `top_k × 3` candidates; the reranker scores every candidate against the **original query** (natural language, not the rewritten keyword query) and returns the top `top_k`.
+
+| `RERANK_MODEL` value | Backend | Notes |
+|---|---|---|
+| `cross-encoder/ms-marco-MiniLM-L-6-v2` (default) | Local `sentence-transformers` | ~80 MB, cached in `MODEL_PATH` |
+| `cohere://<model>` | Cohere Rerank API | Requires `COHERE_API_KEY` |
+| `jina://<model>` | Jina AI Rerank API | Requires `JINA_API_KEY` |
+| *(empty)* | Disabled | Retrieves `top_k` directly |
+
+Provider routing lives in `reranker_factory.py` (`make_reranker()`), following the same prefix convention as `llm_factory.py`.
 
 #### 6. LLM Parameters
 
