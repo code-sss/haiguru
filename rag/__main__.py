@@ -32,7 +32,7 @@ from llama_index.core.vector_stores.types import (
 from config import EMBED_DIM, EMBED_MODEL, LLM_CONTEXT_WINDOW, RAG_MODEL, LLM_REQUEST_TIMEOUT, LLM_THINKING
 from llm_factory import make_llm
 from rag.retriever import build_retriever
-from rag.query_rewriter import rewrite as rewrite_query
+from rag.query_rewriter import rewrite as rewrite_query, RewriteResult
 
 
 def _parse_args() -> argparse.Namespace:
@@ -106,16 +106,21 @@ def main() -> None:
     llm = make_llm(RAG_MODEL, request_timeout=LLM_REQUEST_TIMEOUT, context_window=LLM_CONTEXT_WINDOW, thinking=LLM_THINKING)
     Settings.llm = llm
 
-    # --- Query rewriting + intent classification ---
-    rewritten, intent = rewrite_query(args.query, llm)
-    print(f"Rewritten query : {rewritten!r}")
-    print(f"Intent          : {intent}")
+    # --- Query rewriting + intent classification + safety check ---
+    result: RewriteResult = rewrite_query(args.query, llm)
+    print(f"Rewritten query : {result.rewritten_query!r}")
+    print(f"Intent          : {result.intent}")
+    print(f"Safe            : {result.safe}")
     print("-" * 60)
+
+    if not result.safe:
+        print(f"\n{result.reject_reason}")
+        return
 
     retriever = build_retriever(top_k=args.top_k, filters=filters)
 
     if args.retrieve_only:
-        nodes = retriever.retrieve(rewritten)
+        nodes = retriever.retrieve(result.rewritten_query)
         _print_nodes(nodes)
         return
 
@@ -194,14 +199,14 @@ def main() -> None:
         ),
     }
 
-    qa_template = _QA_TEMPLATES.get(intent, _QA_TEMPLATES["explanation"])
-    refine_template = _REFINE_TEMPLATES.get(intent, _REFINE_TEMPLATES["explanation"])
+    qa_template = _QA_TEMPLATES.get(result.intent, _QA_TEMPLATES["explanation"])
+    refine_template = _REFINE_TEMPLATES.get(result.intent, _REFINE_TEMPLATES["explanation"])
 
     # Retrieve with the rewritten query (keyword-dense, better recall).
     # Synthesise with the original query prefixed by intent so the LLM gets
     # both the precise question and an explicit signal of what to do.
-    nodes = retriever.retrieve(rewritten)
-    synthesis_query = f"[{intent}] {args.query}"
+    nodes = retriever.retrieve(result.rewritten_query)
+    synthesis_query = f"[{result.intent}] {args.query}"
 
     synthesizer = CompactAndRefine(
         llm=llm,

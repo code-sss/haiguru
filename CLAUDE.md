@@ -57,15 +57,19 @@ uv run python -m rag "prime numbers" --grade GRADE_7 --subject MATHEMATICS --ret
 
 The `rag` module has three stages:
 
-1. **Query rewriting + intent classification** (`rag/query_rewriter.py`) — one LLM call that returns:
+1. **Query rewriting + intent classification + safety** (`rag/query_rewriter.py`) — one LLM call that returns a `RewriteResult`:
    - `rewritten_query`: keyword-dense version used for retrieval
    - `intent`: `"definition"` | `"computation"` | `"explanation"` — selects synthesis template and is prepended to the original query for synthesis
+   - `safe`: `False` if the query is rejected (profanity, prompt injection, harmful content); off-topic benign questions pass through
+   - `reject_reason`: friendly message shown to the user when `safe=False`
 
 2. **Hybrid retrieval** (`rag/retriever.py`) — fused dense (HNSW cosine) + sparse (tsvector) search using the rewritten query
 
 3. **Synthesis** (`rag/__main__.py`) — `CompactAndRefine` with an intent-specific prompt template; the synthesiser receives `[intent] original_query` (not the rewritten query) to preserve exact semantic precision
 
 Adding a new intent requires: a new example in `_REWRITE_PROMPT` (query_rewriter.py) and new entries in `_QA_TEMPLATES` and `_REFINE_TEMPLATES` (\_\_main\_\_.py). Unknown intents fall back to `"explanation"`.
+
+Parse errors in the rewriter fail safe — the query is rejected rather than passed through.
 
 ## Infrastructure
 

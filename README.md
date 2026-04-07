@@ -343,13 +343,22 @@ HNSW via pgvector (`vector_cosine_ops`), configured in both `embed_pipeline` and
 
 No text splitter is used. Each `topic_content` DB row is embedded as a single `TextNode`. One scanned page → one OCR `.md` file → one DB row → one vector. Chunk size is whatever fits on a textbook page.
 
-#### 4. Query Rewriting + Intent Classification
+#### 4. Query Rewriting + Intent Classification + Safety
 
-Yes — implemented in `rag/query_rewriter.py`. Before retrieval, the RAG model rewrites the query and classifies its intent in a single LLM call.
+Yes — implemented in `rag/query_rewriter.py`. A single LLM call before retrieval returns a `RewriteResult` with four fields:
 
-**Rewritten query** is keyword-dense (filler words removed, textbook synonyms added) and is used for retrieval only — this improves recall on both the dense and sparse legs.
+| Field | Purpose |
+|---|---|
+| `rewritten_query` | Keyword-dense version used for retrieval (filler removed, synonyms added) |
+| `intent` | `"definition"` \| `"computation"` \| `"explanation"` — selects synthesis template |
+| `safe` | `False` if the query should be rejected before retrieval |
+| `reject_reason` | Friendly message shown to the user when `safe=False` |
 
-**Intent** controls which synthesis prompt template is selected and is also prepended to the original question as `[intent] original question` passed to the synthesiser — so the LLM gets the precise original question alongside an explicit behavioural signal.
+**Retrieval** uses `rewritten_query` — improves recall on both dense and sparse legs.
+
+**Synthesis** receives `[intent] original_query` as `{query_str}` — preserves exact semantic precision of the original question while giving the LLM an explicit behavioural signal.
+
+**Intent → synthesis behaviour:**
 
 | Intent | When | Synthesis behaviour |
 |---|---|---|
@@ -358,6 +367,17 @@ Yes — implemented in `rag/query_rewriter.py`. Before retrieval, the RAG model 
 | `explanation` | asking how/why something works | synthesise in own words from context |
 
 Unknown intents fall back to `"explanation"` at both the rewriter and the template lookup.
+
+**Safety guardrails** — `safe=False` blocks the query before any retrieval or synthesis:
+
+| Blocked | Allowed through |
+|---|---|
+| Profanity, slurs, abusive language | Off-topic but benign questions |
+| Prompt injection attempts | Curious or tangential learning questions |
+| Adult, sexual, or graphically violent content | |
+| Instructions for illegal/harmful activity | |
+
+Rejection messages are friendly and conversational. Parse errors fail safe (reject rather than pass through).
 
 #### 5. Reranking
 
