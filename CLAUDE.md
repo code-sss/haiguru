@@ -53,6 +53,20 @@ uv run python -m rag "explain integers"
 uv run python -m rag "prime numbers" --grade GRADE_7 --subject MATHEMATICS --retrieve-only
 ```
 
+## RAG Pipeline internals
+
+The `rag` module has three stages:
+
+1. **Query rewriting + intent classification** (`rag/query_rewriter.py`) — one LLM call that returns:
+   - `rewritten_query`: keyword-dense version used for retrieval
+   - `intent`: `"definition"` | `"computation"` | `"explanation"` — selects synthesis template and is prepended to the original query for synthesis
+
+2. **Hybrid retrieval** (`rag/retriever.py`) — fused dense (HNSW cosine) + sparse (tsvector) search using the rewritten query
+
+3. **Synthesis** (`rag/__main__.py`) — `CompactAndRefine` with an intent-specific prompt template; the synthesiser receives `[intent] original_query` (not the rewritten query) to preserve exact semantic precision
+
+Adding a new intent requires: a new example in `_REWRITE_PROMPT` (query_rewriter.py) and new entries in `_QA_TEMPLATES` and `_REFINE_TEMPLATES` (\_\_main\_\_.py). Unknown intents fall back to `"explanation"`.
+
 ## Infrastructure
 
 - **Postgres** is exposed on `localhost:5433` (not 5432, to avoid local conflicts)

@@ -302,3 +302,75 @@ uv run python -m embed_pipeline --topic-id <uuid>
 | `topic_content_vectors` | `embed_pipeline` — pgvector table, not Alembic-managed |
 
 All write operations are upserts — re-running any step is always safe.
+
+---
+
+## Technical Details
+
+### RAG Pipeline
+is the code doing 
+1. hybrid search? what type of hybrid search? what is the weighting (beta or k in Reciprocal Rank Fusion)?
+2. Is the database using HNSW or similar indexing?
+3. What chunking strategy is used?
+4. Is there query rewriting of input prompt? GLINER or HyDE
+5. Are we doing Reranking after retrieval?
+6. What temparature, top k, top p, repitition penalties, logit biases and other LLM parameters are used?
+
+#### 1. Hybrid Search
+
+Yes — dense + sparse, fused via **Relative Score Fusion (RSF)**.
+
+| Leg | Method |
+|---|---|
+| Dense | Cosine similarity over HNSW vector index |
+| Sparse | PostgreSQL `tsvector` full-text search (BM25-like) |
+| Fusion | `QueryFusionRetriever` with `mode="relative_score"` |
+
+RSF normalises each leg's scores to `[0, 1]` and averages them equally — there is no explicit beta/alpha weight and this is **not** Reciprocal Rank Fusion (RRF).
+
+#### 2. Vector Index
+
+HNSW via pgvector (`vector_cosine_ops`), configured in both `embed_pipeline` and `rag/retriever.py`:
+
+| Parameter | Value |
+|---|---|
+| `hnsw_m` | 16 (max neighbours per node) |
+| `hnsw_ef_construction` | 64 (build-time beam width) |
+| `hnsw_ef_search` | 40 (query-time beam width) |
+| Distance metric | Cosine (`vector_cosine_ops`) |
+
+#### 3. Chunking Strategy
+
+No text splitter is used. Each `topic_content` DB row is embedded as a single `TextNode`. One scanned page → one OCR `.md` file → one DB row → one vector. Chunk size is whatever fits on a textbook page.
+
+#### 4. Query Rewriting + Intent Classification
+
+Yes — implemented in `rag/query_rewriter.py`. Before retrieval, the RAG model rewrites the query and classifies its intent in a single LLM call.
+
+**Rewritten query** is keyword-dense (filler words removed, textbook synonyms added) and is used for retrieval only — this improves recall on both the dense and sparse legs.
+
+**Intent** controls which synthesis prompt template is selected and is also prepended to the original question as `[intent] original question` passed to the synthesiser — so the LLM gets the precise original question alongside an explicit behavioural signal.
+
+| Intent | When | Synthesis behaviour |
+|---|---|---|
+| `definition` | asking for a definition, property, or formula | quote the context verbatim |
+| `computation` | asking to solve a problem or find an unknown value | apply rules step-by-step, show working, state final answer |
+| `explanation` | asking how/why something works | synthesise in own words from context |
+
+Unknown intents fall back to `"explanation"` at both the rewriter and the template lookup.
+
+#### 5. Reranking
+
+None. After RSF fusion, top-k nodes go directly to the `CompactAndRefine` response synthesiser. `CompactAndRefine` is a response strategy (iterative refinement over chunks), not a reranker.
+
+#### 6. LLM Parameters
+
+Only the following are explicitly set (all others use provider defaults):
+
+| Parameter | Value | Configured via |
+|---|---|---|
+| `context_window` | 4096 | `LLM_CONTEXT_WINDOW` env var |
+| `request_timeout` | 360 s | `LLM_REQUEST_TIMEOUT` env var |
+| `thinking` | false | `LLM_THINKING` env var |
+
+Not set: temperature, top_k, top_p, repetition penalty, frequency penalty, presence penalty, logit bias, max_tokens. For the default Ollama `qwen3.5:9b` model, provider defaults apply (typically `temperature=0.8`, `top_k=40`, `top_p=0.9`).

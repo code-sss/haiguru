@@ -32,6 +32,7 @@ from llama_index.core.vector_stores.types import (
 from config import EMBED_DIM, EMBED_MODEL, LLM_CONTEXT_WINDOW, RAG_MODEL, LLM_REQUEST_TIMEOUT, LLM_THINKING
 from llm_factory import make_llm
 from rag.retriever import build_retriever
+from rag.query_rewriter import rewrite as rewrite_query
 
 
 def _parse_args() -> argparse.Namespace:
@@ -101,52 +102,113 @@ def main() -> None:
         print(f"Filters      : {filters}")
     print("-" * 60)
 
-    retriever = build_retriever(top_k=args.top_k, filters=filters)
-
-    if args.retrieve_only:
-        nodes = retriever.retrieve(args.query)
-        _print_nodes(nodes)
-        return
-
-    # Full RAG: retrieve + synthesise
+    # LLM is needed for query rewriting regardless of --retrieve-only
     llm = make_llm(RAG_MODEL, request_timeout=LLM_REQUEST_TIMEOUT, context_window=LLM_CONTEXT_WINDOW, thinking=LLM_THINKING)
     Settings.llm = llm
 
-    _QA_TEMPLATE = PromptTemplate(
-        "You are an educational assistant. Answer the question using ONLY the provided context.\n"
-        "Use the EXACT wording and definitions from the context wherever possible — do NOT paraphrase or reword definitions.\n"
-        "If the context contains a direct definition or statement that answers the question, quote it verbatim.\n"
-        "If the context does not contain the answer, say 'I don't know based on the available content'.\n\n"
-        "Context:\n"
-        "---------------------\n"
-        "{context_str}\n"
-        "---------------------\n\n"
-        "Question: {query_str}\n"
-        "Answer: "
-    )
+    # --- Query rewriting + intent classification ---
+    rewritten, intent = rewrite_query(args.query, llm)
+    print(f"Rewritten query : {rewritten!r}")
+    print(f"Intent          : {intent}")
+    print("-" * 60)
 
-    _REFINE_TEMPLATE = PromptTemplate(
-        "You are an educational assistant. The original question is: {query_str}\n"
-        "We have an existing answer: {existing_answer}\n"
-        "Refine the answer using the additional context below, preserving exact wording from the source material.\n"
-        "If the new context is not useful, return the existing answer unchanged.\n\n"
-        "Additional context:\n"
-        "---------------------\n"
-        "{context_msg}\n"
-        "---------------------\n\n"
-        "Refined answer: "
-    )
+    retriever = build_retriever(top_k=args.top_k, filters=filters)
 
-    query_engine = RetrieverQueryEngine(
-        retriever=retriever,
-        response_synthesizer=CompactAndRefine(
-            llm=llm,
-            text_qa_template=_QA_TEMPLATE,
-            refine_template=_REFINE_TEMPLATE,
+    if args.retrieve_only:
+        nodes = retriever.retrieve(rewritten)
+        _print_nodes(nodes)
+        return
+
+    # --- Intent-specific prompt templates ---
+    _QA_TEMPLATES = {
+        "definition": PromptTemplate(
+            "You are an educational assistant. The student is asking for a definition or factual statement.\n"
+            "Find the relevant definition or property in the context and quote it verbatim.\n"
+            "If the context does not contain the answer, say 'I don't know based on the available content'.\n\n"
+            "Context:\n"
+            "---------------------\n"
+            "{context_str}\n"
+            "---------------------\n\n"
+            "Question: {query_str}\n"
+            "Answer: "
         ),
-    )
+        "computation": PromptTemplate(
+            "You are an educational assistant. The student has a specific problem to solve.\n"
+            "Use the rules and methods from the context to solve it step-by-step. Show all working clearly.\n"
+            "State the final answer explicitly at the end.\n"
+            "Ground every step in the context — do not introduce methods not present in it.\n"
+            "If the context does not contain enough information to solve the problem, say 'I don't know based on the available content'.\n\n"
+            "Context:\n"
+            "---------------------\n"
+            "{context_str}\n"
+            "---------------------\n\n"
+            "Question: {query_str}\n"
+            "Answer: "
+        ),
+        "explanation": PromptTemplate(
+            "You are an educational assistant. The student wants a concept explained.\n"
+            "Synthesise a clear explanation using ONLY the provided context. Use your own words but stay faithful to the source.\n"
+            "Include examples from the context where helpful.\n"
+            "If the context does not contain the answer, say 'I don't know based on the available content'.\n\n"
+            "Context:\n"
+            "---------------------\n"
+            "{context_str}\n"
+            "---------------------\n\n"
+            "Question: {query_str}\n"
+            "Answer: "
+        ),
+    }
 
-    response = query_engine.query(args.query)
+    _REFINE_TEMPLATES = {
+        "definition": PromptTemplate(
+            "You are an educational assistant. The original question is: {query_str}\n"
+            "We have an existing answer: {existing_answer}\n"
+            "If the additional context contains a more precise or complete definition, update the answer. Otherwise return it unchanged.\n\n"
+            "Additional context:\n"
+            "---------------------\n"
+            "{context_msg}\n"
+            "---------------------\n\n"
+            "Refined answer: "
+        ),
+        "computation": PromptTemplate(
+            "You are an educational assistant. The original question is: {query_str}\n"
+            "We have an existing answer: {existing_answer}\n"
+            "If the additional context provides more relevant rules or steps that improve the solution, refine the working and restate the final answer.\n"
+            "If the new context is not useful, return the existing answer unchanged.\n\n"
+            "Additional context:\n"
+            "---------------------\n"
+            "{context_msg}\n"
+            "---------------------\n\n"
+            "Refined answer: "
+        ),
+        "explanation": PromptTemplate(
+            "You are an educational assistant. The original question is: {query_str}\n"
+            "We have an existing answer: {existing_answer}\n"
+            "Refine the explanation using the additional context if it adds useful detail or examples.\n"
+            "If the new context is not useful, return the existing answer unchanged.\n\n"
+            "Additional context:\n"
+            "---------------------\n"
+            "{context_msg}\n"
+            "---------------------\n\n"
+            "Refined answer: "
+        ),
+    }
+
+    qa_template = _QA_TEMPLATES.get(intent, _QA_TEMPLATES["explanation"])
+    refine_template = _REFINE_TEMPLATES.get(intent, _REFINE_TEMPLATES["explanation"])
+
+    # Retrieve with the rewritten query (keyword-dense, better recall).
+    # Synthesise with the original query prefixed by intent so the LLM gets
+    # both the precise question and an explicit signal of what to do.
+    nodes = retriever.retrieve(rewritten)
+    synthesis_query = f"[{intent}] {args.query}"
+
+    synthesizer = CompactAndRefine(
+        llm=llm,
+        text_qa_template=qa_template,
+        refine_template=refine_template,
+    )
+    response = synthesizer.synthesize(synthesis_query, nodes=nodes)
 
     print(f"\nAnswer ({RAG_MODEL}):\n")
     print(str(response))
