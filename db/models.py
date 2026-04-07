@@ -151,9 +151,19 @@ class ParagraphQuestion(Base):
     __tablename__ = "paragraph_questions"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    passage = Column(String, nullable=False)
+    content = Column(String, nullable=False)
     topic_id = Column(UUID(as_uuid=True), ForeignKey("topics.id"), nullable=True)
     question_ids = Column(ARRAY(UUID(as_uuid=True)), nullable=False, default=list)
+    title = Column(String, nullable=False)
+    paragraph_type = Column(
+        Enum("reading_comprehension", "case_study", "data_interpretation", name="paragraphtype"),
+        nullable=True,
+    )
+    tags = Column(JSONB, nullable=True)
+    difficulty = Column(
+        Enum("easy", "medium", "hard", name="difficultylevel", create_constraint=False),
+        nullable=True,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -253,6 +263,8 @@ class ExamSessionQuestion(Base):
     order = Column(Integer, nullable=True)
     points = Column(Integer, nullable=True)
     earned_points = Column(Float, nullable=True)
+    user_answer = Column(String, nullable=True)
+    is_correct = Column(Boolean, nullable=True)
 
 
 class Answer(Base):
