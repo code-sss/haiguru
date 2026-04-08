@@ -1,8 +1,8 @@
-"""initial schema
+"""Initial Schema
 
-Revision ID: 88c7cd6e2b11
+Revision ID: 860b94e6712a
 Revises: 
-Create Date: 2026-04-06 20:16:01.734865
+Create Date: 2026-04-08 09:26:52.599754
 
 """
 from typing import Sequence, Union
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
-revision: str = '88c7cd6e2b11'
+revision: str = '860b94e6712a'
 down_revision: Union[str, Sequence[str], None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -49,14 +49,14 @@ def upgrade() -> None:
     sa.Column('title', sa.String(), nullable=False),
     sa.Column('description', sa.String(), nullable=True),
     sa.Column('mode', sa.Enum('static', 'dynamic', 'custom', name='exammode'), nullable=False),
-    sa.Column('ruleset', postgresql.JSONB(astext_type=sa.Text()), nullable=True),
-    sa.Column('created_by', sa.String(), nullable=False),
+    sa.Column('ruleset', sa.JSON(), nullable=True),
+    sa.Column('created_by', sa.UUID(), nullable=False),
     sa.Column('is_active', sa.Boolean(), nullable=False),
     sa.Column('duration_minutes', sa.Integer(), nullable=True),
     sa.Column('passing_score', sa.Float(), nullable=True),
     sa.Column('owner_type', sa.String(), nullable=False),
     sa.Column('owner_id', sa.String(), nullable=True),
-    sa.Column('organization_id', sa.String(), nullable=True),
+    sa.Column('organization_id', sa.Integer(), nullable=True),
     sa.Column('purpose', sa.String(), nullable=False),
     sa.CheckConstraint('duration_minutes IS NULL OR duration_minutes > 0', name='ck_exam_templates_duration_positive'),
     sa.CheckConstraint('passing_score IS NULL OR (passing_score >= 0.0 AND passing_score <= 1.0)', name='ck_exam_templates_passing_score_range'),
@@ -77,11 +77,11 @@ def upgrade() -> None:
     )
     op.create_table('exam_sessions',
     sa.Column('id', sa.UUID(), nullable=False),
-    sa.Column('user_id', sa.String(), nullable=False),
+    sa.Column('user_id', sa.UUID(), nullable=False),
     sa.Column('exam_template_id', sa.UUID(), nullable=True),
     sa.Column('course_path_node_id', sa.UUID(), nullable=False),
     sa.Column('mode', sa.Enum('static', 'dynamic', 'custom', name='exammode'), nullable=False),
-    sa.Column('ruleset', postgresql.JSONB(astext_type=sa.Text()), nullable=True),
+    sa.Column('ruleset', sa.JSON(), nullable=True),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
     sa.Column('started_at', sa.DateTime(timezone=True), nullable=True),
     sa.Column('finished_at', sa.DateTime(timezone=True), nullable=True),
@@ -93,9 +93,13 @@ def upgrade() -> None:
     )
     op.create_table('paragraph_questions',
     sa.Column('id', sa.UUID(), nullable=False),
-    sa.Column('passage', sa.String(), nullable=False),
+    sa.Column('content', sa.String(), nullable=False),
     sa.Column('topic_id', sa.UUID(), nullable=True),
     sa.Column('question_ids', postgresql.ARRAY(sa.UUID()), nullable=False),
+    sa.Column('title', sa.String(), nullable=False),
+    sa.Column('paragraph_type', sa.Enum('reading_comprehension', 'case_study', 'data_interpretation', name='paragraphtype'), nullable=True),
+    sa.Column('tags', postgresql.JSONB(astext_type=sa.Text()), nullable=True),
+    sa.Column('difficulty', sa.String(), nullable=True),
     sa.ForeignKeyConstraint(['topic_id'], ['topics.id'], ),
     sa.PrimaryKeyConstraint('id')
     )
@@ -129,7 +133,7 @@ def upgrade() -> None:
     op.create_table('answers',
     sa.Column('id', sa.UUID(), nullable=False),
     sa.Column('question_id', sa.UUID(), nullable=False),
-    sa.Column('user_id', sa.String(), nullable=False),
+    sa.Column('user_id', sa.UUID(), nullable=False),
     sa.Column('session_id', sa.UUID(), nullable=False),
     sa.Column('selected_options', postgresql.ARRAY(sa.String()), nullable=True),
     sa.Column('text_answer', sa.String(), nullable=True),
@@ -146,6 +150,8 @@ def upgrade() -> None:
     sa.Column('order', sa.Integer(), nullable=True),
     sa.Column('points', sa.Integer(), nullable=True),
     sa.Column('earned_points', sa.Float(), nullable=True),
+    sa.Column('user_answer', sa.String(), nullable=True),
+    sa.Column('is_correct', sa.Boolean(), nullable=True),
     sa.ForeignKeyConstraint(['exam_session_id'], ['exam_sessions.id'], ),
     sa.ForeignKeyConstraint(['question_id'], ['questions.id'], ),
     sa.PrimaryKeyConstraint('id')

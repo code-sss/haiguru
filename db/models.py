@@ -11,6 +11,7 @@ from sqlalchemy import (
     Float,
     ForeignKey,
     Integer,
+    JSON,
     String,
     UniqueConstraint,
 )
@@ -160,10 +161,7 @@ class ParagraphQuestion(Base):
         nullable=True,
     )
     tags = Column(JSONB, nullable=True)
-    difficulty = Column(
-        Enum("easy", "medium", "hard", name="difficultylevel", create_constraint=False),
-        nullable=True,
-    )
+    difficulty = Column(String, nullable=True)
 
 
 # ---------------------------------------------------------------------------
@@ -184,14 +182,14 @@ class ExamTemplate(Base):
         Enum("static", "dynamic", "custom", name="exammode"),
         nullable=False,
     )
-    ruleset = Column(JSONB, nullable=True)
-    created_by = Column(String, nullable=False)
+    ruleset = Column(JSON, nullable=True)
+    created_by = Column(UUID(as_uuid=True), nullable=False)
     is_active = Column(Boolean, nullable=False, default=True)
     duration_minutes = Column(Integer, nullable=True)
     passing_score = Column(Float, nullable=True)
     owner_type = Column(String, nullable=False, default="platform")
     owner_id = Column(String, nullable=True)
-    organization_id = Column(String, nullable=True)
+    organization_id = Column(Integer, nullable=True)
     purpose = Column(String, nullable=False, default="exam")
 
     __table_args__ = (
@@ -230,7 +228,7 @@ class ExamSession(Base):
     __tablename__ = "exam_sessions"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_id = Column(String, nullable=False)  # Keycloak sub
+    user_id = Column(UUID(as_uuid=True), nullable=False)
     exam_template_id = Column(
         UUID(as_uuid=True), ForeignKey("exam_templates.id"), nullable=True
     )
@@ -241,7 +239,7 @@ class ExamSession(Base):
         Enum("static", "dynamic", "custom", name="exammode"),
         nullable=False,
     )
-    ruleset = Column(JSONB, nullable=True)
+    ruleset = Column(JSON, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     started_at = Column(DateTime(timezone=True), nullable=True)
     finished_at = Column(DateTime(timezone=True), nullable=True)
@@ -272,7 +270,7 @@ class Answer(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     question_id = Column(UUID(as_uuid=True), ForeignKey("questions.id"), nullable=False)
-    user_id = Column(String, nullable=False)  # Keycloak sub
+    user_id = Column(UUID(as_uuid=True), nullable=False)
     session_id = Column(UUID(as_uuid=True), ForeignKey("exam_sessions.id"), nullable=False)
     selected_options = Column(ARRAY(String), nullable=True)
     text_answer = Column(String, nullable=True)
