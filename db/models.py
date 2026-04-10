@@ -211,7 +211,7 @@ class ExamTemplateQuestion(Base):
     exam_template_id = Column(
         UUID(as_uuid=True), ForeignKey("exam_templates.id"), nullable=True
     )
-    question_id = Column(UUID(as_uuid=True), ForeignKey("questions.id"), nullable=True)
+    question_id = Column(UUID(as_uuid=True), ForeignKey("questions.id"), nullable=False)
     paragraph_question_id = Column(
         UUID(as_uuid=True), ForeignKey("paragraph_questions.id"), nullable=True
     )
@@ -263,16 +263,3 @@ class ExamSessionQuestion(Base):
     earned_points = Column(Float, nullable=True)
     user_answer = Column(String, nullable=True)
     is_correct = Column(Boolean, nullable=True)
-
-
-class Answer(Base):
-    __tablename__ = "answers"
-
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    question_id = Column(UUID(as_uuid=True), ForeignKey("questions.id"), nullable=False)
-    user_id = Column(UUID(as_uuid=True), nullable=False)
-    session_id = Column(UUID(as_uuid=True), ForeignKey("exam_sessions.id"), nullable=False)
-    selected_options = Column(ARRAY(String), nullable=True)
-    text_answer = Column(String, nullable=True)
-    is_correct = Column(Boolean, nullable=True)
-    submitted_at = Column(DateTime(timezone=True), nullable=False)

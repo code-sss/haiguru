@@ -211,7 +211,6 @@ exam_templates  (linked to a course_path_node)
 
 exam_sessions   (a user's attempt at an exam_template)
   └── exam_session_questions
-  └── answers
 ```
 
 ### Key column notes

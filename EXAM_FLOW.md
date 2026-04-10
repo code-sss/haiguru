@@ -71,9 +71,16 @@ The LLM judge uses `correct_answers` as the model answer:
 RAG retrieval from topic_contents     ← future: retrieve relevant curriculum text
 ```
 
-> ⚠️ If `correct_answers` is sparse or empty for an essay question, LLM judge
-> grading quality degrades. Ensure essay questions have `correct_answers`
-> populated with key points or a rubric summary.
+> ⚠️ If `correct_answers` is empty for an essay question:
+> - **At template authoring time:** auto-generate a model answer via RAG
+>   (retrieve from `topic_contents` using `question.topic_id`). The author sees
+>   the generated answer and can edit/approve before saving.
+> - **At eval_pipeline time (fallback):** if `correct_answers` is still empty,
+>   fall back to live RAG retrieval from `topic_contents`. A warning is logged
+>   but grading proceeds.
+>
+> The template authoring path (RAG + human review) is the quality path; the
+> eval_pipeline fallback is the safety net.
 
 ### Paragraph Stimulus Creation
 
@@ -87,6 +94,8 @@ related questions.
 | `title` | Display title |
 | `paragraph_type` | `reading_comprehension`, `case_study`, or `data_interpretation` |
 | `question_ids` (ARRAY of UUID) | Ordered list of `questions.id` values belonging to this stimulus |
+| `tags` (JSONB) | Optional metadata |
+| `difficulty` (String, nullable) | Optional difficulty level |
 | `topic_id` | FK → `topics.id` |
 
 Each sub-question in `question_ids` is a normal row in `questions` and can be
@@ -102,14 +111,23 @@ paragraph_questions  (stimulus block)
     → q3: fill_in_the_blank "The story is set in ___."
 ```
 
+> **Note:** haisir's `assessments` (topic-scoped practice sets with
+> `AssessmentAttempt`/`AssessmentAnswer`) are intentionally omitted from haiguru.
+> haiguru focuses on exam-based grading with LLM/RAG evaluation.
+
 ---
 
 ## Phase 2 — Exam Template Creation
 
 An `exam_templates` row defines a reusable exam blueprint.
 
-Key fields: `course_path_node_id`, `title`, `mode` (`static`/`dynamic`/`custom`),
-`duration_minutes`, `passing_score`, `ruleset`.
+Key fields: `course_path_node_id`, `title`, `description`, `mode`
+(`static`/`dynamic`/`custom`), `duration_minutes`, `passing_score`, `ruleset`,
+`created_by`, `is_active`, `owner_type`, `owner_id`, `organization_id`,
+`purpose`.
+
+> `passing_score` is nullable. Business logic defaults to `0.6` (60%) when `None`.
+Always populate this field explicitly on new templates.
 
 Questions are added via `exam_template_questions`. Each row always has a
 non-nullable `question_id` pointing to one `questions` row — matching haisir
@@ -129,20 +147,64 @@ indicate they belong to a stimulus block and should be displayed with it, but
 `order` and `points` are set per entry. The stimulus text itself is read from
 `paragraph_questions.content` at display time using `paragraph_question_id`.
 
+**Dynamic exam ruleset (`ExamRuleset`):**
+
+For `dynamic` mode templates, a `ruleset` JSONB field drives question
+selection at session creation time:
+
+| Field | Description |
+|---|---|
+| `topics` (list of UUID) | Topics to draw questions from |
+| `difficulty_distribution` (dict) | e.g. `{"easy": 5, "medium": 10, "hard": 5}` |
+| `tags` (list of str, nullable) | Optional tag filter |
+
+**Visibility and ownership:**
+
+Templates carry `owner_type` (`platform` or `organization`), `owner_id`, and
+`organization_id`. Students retrieve templates via
+`GET /api/exams/course/{node_id}` — the service enforces visibility rules so
+students see only templates scoped to their organization or platform-wide
+templates.
+
 ---
 
 ## Phase 3 — User Exam Attempt
 
 ### Session Initialisation
 
-When a user starts an exam, an `exam_sessions` row is created
-(`status: pending → ongoing`). The system then:
+Session creation is a **two-step process** (two separate API calls):
 
-1. Queries all `exam_template_questions` for the template, ordered by `order`.
-2. For each entry, creates one `exam_session_questions` row (always one-to-one —
-   sub-questions were already expanded at template authoring time).
-3. Each `exam_session_questions` row records: `exam_session_id`, `question_id`,
-   `order`, `points` — with `user_answer`, `earned_points`, `is_correct` initially null.
+**Step 1 — Create** (`POST /session/create`):
+- Creates an `exam_sessions` row with `status = pending`.
+- For a `static` template, immediately queries all `exam_template_questions`
+  ordered by `order` and creates one `exam_session_questions` row per entry
+  (always one-to-one — sub-questions were already expanded at template
+  authoring time).
+- Each `exam_session_questions` row records: `exam_session_id`, `question_id`,
+  `order`, `points` — with `user_answer`, `earned_points`, `is_correct` initially null.
+- **`paragraph_question_id` is NOT copied from `exam_template_questions` to
+  `exam_session_questions`.** Session question rows carry only `question_id`,
+  `order`, and `points`. Paragraph grouping for display is rebuilt at read time
+  by querying `paragraph_questions.question_ids[]` against the session's
+  question IDs.
+
+**Step 2 — Start** (`POST /session/{id}/start`):
+- Transitions `status: pending → ongoing`.
+- Records `started_at = now(UTC)`.
+
+The student is presented questions only after Step 2.
+
+### Retrieving Questions (`GET /session/{id}/questions`)
+
+- Reads all `exam_session_questions` for the session.
+- Resolves the full `Question` entity for each via `question_ids`.
+- Queries `paragraph_questions` whose `question_ids[]` intersect the session's
+  question set to reconstruct paragraph groupings at read time.
+- Returns two lists:
+  - `questions` — standalone questions not in any paragraph block.
+  - `paragraph_questions` — stimulus blocks with their nested questions in
+    declared order, each question rendered with its `marks` value.
+- Option images and question images are base64-encoded in the response.
 
 ### Answer Submission (mirrors haisir `submit_exam`)
 
@@ -163,12 +225,21 @@ The student submits all answers in one request. The submission endpoint:
    >   question. The `image:` prefix is set per `exam_session_questions` row; the
    >   eval pipeline OCRs each image individually at grading time.
 2. Marks the session `status = "completed"` and sets `finished_at`.
+   **`exam_sessions.score` is NOT written here** — it remains `NULL` after
+   submission. Score is populated later:
+   - **Objective-only sessions**: by `GET /session/{id}/answers` (the review
+     endpoint), which grades lazily and calls `_finalize_session()` to write
+     the raw earned-mark sum.
+   - **Sessions with essay or handwritten answers**: by the `eval_pipeline`,
+     which writes `earned_points` per question then updates `exam_sessions.score`.
 
 > **Note:** This mirrors haisir's `POST /session/{session_id}/submit` exactly.
 > In haisir, `earned_points` and `is_correct` for objective questions are persisted
-> lazily on the answer-review GET request; essay questions remain ungraded until
-> human review. haiguru matches this for objective questions and replaces human
-> review with the `eval_pipeline` (LLM judge) for essay questions.
+> lazily on the answer-review GET request (which is a **mutating GET** — it writes
+> grading results and calls `_finalize_session()` to set `score`);
+> essay questions remain ungraded until human review.
+> haiguru matches this for objective questions and replaces human review with the
+> `eval_pipeline` (LLM judge) for essay questions.
 
 ---
 
@@ -210,9 +281,12 @@ and writes results back to the DB.
 
    > Each `image:` entry points to one question's answer image (per-question upload
    > path). OCR returns text for that question only — no extraction or isolation step
-   > is needed. `grade_question` is responsible for normalizing OCR text (e.g.
-   > `"option B"` → `"b"`); if it cannot, its scope should be expanded rather than
-   > adding a separate normalization step in the eval pipeline.
+   > is needed.
+   >
+   > ⚠️ **Open implementation gap:** `grade_question` is responsible for normalizing
+   > OCR text (e.g. `"option B"` → `"b"`). Concrete normalization rules will be
+   > defined when building the OCR pipeline. Until then, OCR'd objective answers may
+   > produce incorrect scores if the text doesn't match expected option IDs exactly.
 
 3. **OCR detail** (`ocr.py`):
    - Strips the `"image:"` prefix from `user_answer` to get the filesystem path.
@@ -220,9 +294,30 @@ and writes results back to the DB.
    - Overwrites `exam_session_questions.user_answer` with transcribed text.
 
 4. **Grading detail** (`judge.py` + `shared/grading.py`):
-   - **Objective**: `grade_question(user_answer, question.correct_answers)` — same logic as haisir's `shared/grading.py`, returns `(is_correct, earned_points)`.
-   - **Subjective**: `grade_subjective(user_answer, model_answer, points)` via LLM judge, returns `(awarded, remark)`.
-   - `model_answer` = `"; ".join(question.correct_answers or [])`. Falls back to RAG from `topic_contents` (future) if empty.
+
+   Objective grading uses the same `grade_question()` logic as haisir's
+   `shared/grading.py` — only the essay path diverges (LLM judge replaces
+   human review).
+
+   **`grade_question()` dispatch:**
+
+   | `question_type` | Grading logic | Partial credit |
+   |---|---|---|
+   | `single_choice` | Normalize option ID → text; exact set match | No — 0 or full points |
+   | `true_false` | Same as single_choice | No — 0 or full points |
+   | `multiple_choice` | `max(0, (correct_selected − wrong_selected) / total_correct) × points` | Yes |
+   | `fill_in_the_blank` | Normalized text match against each `correct_answers` item | No — 0 or full points |
+   | `essay` | `grade_subjective(user_answer, model_answer, points)` via LLM judge | Yes — returns `(awarded, remark)` |
+
+   **Multiple-choice partial credit formula:**
+
+   ```
+   ratio = max(0, (correct_selected - wrong_selected) / total_correct)
+   earned = ratio * points
+   is_correct = (correct_selected == total_correct and wrong_selected == 0)
+   ```
+
+   - `model_answer` = `"; ".join(question.correct_answers or [])`. Falls back to RAG from `topic_contents` if empty.
    - `explanation` is display-only — surfaced in review UI, suppressed for essay; it does not drive grading.
 
 5. **Write results** (`load.py`):
@@ -234,6 +329,22 @@ and writes results back to the DB.
    - Stores the raw `total_earned` sum in `exam_sessions.score`, matching haisir.
      The ratio is computed at display time (same as haisir's
      `get_all_sessions_for_exam_template`).
+
+   > `eval_pipeline` always performs a full re-sum of all `earned_points` across
+   > all `exam_session_questions` and overwrites `exam_sessions.score`, regardless
+   > of whether `_finalize_session()` already ran from the lazy-grading GET. This
+   > makes `eval_pipeline` the authoritative final scorer for any session it
+   > processes.
+
+### Score Storage and Display
+
+`exam_sessions.score` stores the **raw sum of `earned_points`** across all
+session questions — not a percentage.
+
+- The review endpoint returns `score` as the raw earned-marks sum alongside
+  `total_marks`.
+- Session history converts raw score to a percentage:
+  `round(score / total_marks * 100)`.
 
 ---
 
@@ -268,6 +379,12 @@ exam_sessions  (one per user attempt)
                     [SUBMISSION — mirrors haisir submit_exam]
 Student submits → exam_session_questions.user_answer populated for each question
 Session status → "completed", finished_at set
+exam_sessions.score → NULL  ← NOT written at submission
+
+                    [OBJECTIVE-ONLY PATH — lazy grading on review GET]
+GET /session/{id}/answers  (mutating GET)
+  ├── grades each question via grade_question()  (writes earned_points, is_correct if not already set)
+  └── calls _finalize_session() → writes exam_sessions.score = sum(earned_points)
 
                     [EVALUATION PIPELINE — equiv. of haisir human review]
 eval_pipeline  (for sessions with essay questions or handwritten answers)
@@ -275,5 +392,5 @@ eval_pipeline  (for sessions with essay questions or handwritten answers)
     ├── if user_answer starts with "image:" → strip prefix → OCR per-question image → overwrite user_answer
     ├── grade with shared/grading.py (objective) or LLM judge (essay)
     └── writes earned_points, is_correct → exam_session_questions
-                                        → updates exam_sessions.score
+                                        → updates exam_sessions.score = sum(earned_points)
 ```
