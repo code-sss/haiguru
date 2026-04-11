@@ -203,25 +203,27 @@ uv run python -m eval_pipeline --session-id <uuid>
 ## Implementation Order
 
 ```
-[1] config.py: add EVAL_MODEL
-    .env.example: add EVAL_MODEL=
+[1] ✓ config.py: add EVAL_MODEL
+      .env.example: add EVAL_MODEL=
 
-[2] eval_pipeline/load.py
-    → load_session(), save_results()
-    → depends on: db/models.py (done)
+[2] ✓ eval_pipeline/load.py
+      → load_session(), save_results()
+      → depends on: db/models.py (done)
 
-[3] eval_pipeline/ocr.py
-    → run_ocr_for_answer()
-    → depends on: glm_ocr/client.py (done)
+[3] ✓ eval_pipeline/ocr.py
+      → run_ocr_for_answer()
+      → depends on: glm_ocr/client.py (done)
 
-[4] eval_pipeline/judge.py
-    → grade_subjective(), _parse_json_response(), RAG fallback
-    → depends on: llm_factory.py (done), rag/retriever.py (done), EVAL_MODEL [1]
+[4] ✓ eval_pipeline/judge.py
+      → grade_subjective(), _parse_json_response(), RAG fallback
+      → depends on: llm_factory.py (done), rag/retriever.py (done), EVAL_MODEL [1]
 
-[5] eval_pipeline/__main__.py
-    → _grade_one(), main()
-    → depends on: [2], [3], [4], shared/grading.py (done)
+[5] ✓ eval_pipeline/__main__.py
+      → _grade_one(), main()
+      → depends on: [2], [3], [4], shared/grading.py (done)
 ```
+
+**Status: Complete** — all five steps implemented.
 
 ---
 

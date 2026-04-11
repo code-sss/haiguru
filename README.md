@@ -212,11 +212,43 @@ Reranking is enabled by default using a local `cross-encoder/ms-marco-MiniLM-L-6
 
 `rag.retriever.build_retriever()` is also importable for use in other parts of the project.
 
+### Step 5 — Grade exam sessions (eval_pipeline)
+
+Grades a completed exam session: runs OCR on handwritten-answer images, grades objective questions with `shared/grading.py`, and grades essay questions with an LLM judge. Writes `earned_points` / `is_correct` back to each `exam_session_questions` row and recomputes `exam_sessions.score`.
+
+```bash
+# Grade a session (uses EVAL_MODEL from .env, glm-ocr-optimized for OCR)
+uv run python -m eval_pipeline --session-id <uuid>
+
+# Override the judge model for this run
+uv run python -m eval_pipeline --session-id <uuid> --eval-model openai://gpt-4o
+
+# Override the OCR model
+uv run python -m eval_pipeline --session-id <uuid> --ocr-model glm4v:9b
+```
+
+**When to run:**
+
+| Session type | Grading path |
+|---|---|
+| Objective-only, digital answers | Lazy grading on `GET /session/{id}/answers` — eval_pipeline not required |
+| Any essay question | Run eval_pipeline after submission |
+| Any handwritten answer (`image:` prefix) | Run eval_pipeline after images are uploaded |
+
+**Prerequisites:** The session must have `status = "completed"`. For handwritten answers, image files must exist at the paths stored in `user_answer` (after the `image:` prefix).
+
+**Model config** — set in `.env`:
+
+```ini
+EVAL_MODEL=qwen3.5:9b          # default — any Ollama, openai://, anthropic://, or together:// model
+```
+
 ---
 
 ## LLM Providers
 
-Three pipelines support pluggable LLM/embedding providers via a prefix on the model name:
+Four pipelines support pluggable LLM/embedding providers via a prefix on the model name:
+`etl_pipeline` (`TRANSFORM_MODEL`), `rag` (`RAG_MODEL`), `eval_pipeline` (`EVAL_MODEL`), and `embed_pipeline` (`EMBED_MODEL`).
 
 | Prefix | Provider | Required env var |
 |---|---|---|
@@ -244,9 +276,10 @@ TOGETHER_API_KEY=...
 COHERE_API_KEY=...   # only needed for cohere:// reranker
 JINA_API_KEY=...     # only needed for jina:// reranker
 
-# Use GPT-4o for exercise parsing and RAG synthesis
+# Use GPT-4o for exercise parsing, RAG synthesis, and eval grading
 TRANSFORM_MODEL=openai://gpt-4o
 RAG_MODEL=openai://gpt-4o
+EVAL_MODEL=openai://gpt-4o
 
 # Use OpenAI embeddings (update EMBED_DIM to match the model)
 EMBED_MODEL=openai://text-embedding-3-large

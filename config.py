@@ -33,6 +33,7 @@ LLM_REQUEST_TIMEOUT: float = float(os.getenv("LLM_REQUEST_TIMEOUT", "360"))
 LLM_THINKING: bool = os.getenv("LLM_THINKING", "false").lower() in ("1", "true", "yes")
 
 RERANK_MODEL: str = os.getenv("RERANK_MODEL", "")  # empty = disabled
+EVAL_MODEL: str = os.getenv("EVAL_MODEL", "qwen3.5:9b")
 
 # API keys for external LLM providers (optional — only needed when using that provider)
 OPENAI_API_KEY: str | None = os.getenv("OPENAI_API_KEY")

@@ -9,6 +9,17 @@ questions.
 
 ## Issues
 
+### 15. `GET /session/{id}/answers` grading path — DECIDED: route through eval_pipeline
+
+**Problem:** EXAM_FLOW.md describes a lazy-grading mutating GET that calls `grade_question()` inline (matching haisir). This creates two parallel grading paths — one in the API handler, one in `eval_pipeline` — with `shared/grading.py` as the bridge. Any grading bug would need to be fixed in two places, and `eval_pipeline`'s re-sum (Decision #1) could conflict with the GET's inline `_finalize_session()` call.
+
+**Decision:** The `GET /session/{id}/answers` endpoint does **not** do inline grading. Instead it invokes `eval_pipeline` (as a function call, not a subprocess) and waits for results before returning. `eval_pipeline` remains the single authoritative grading path for all sessions — objective and subjective alike.
+
+**Consequences:**
+- `shared/grading.py` is only imported by `eval_pipeline/` — no second consumer from the API layer.
+- `_finalize_session()` is removed; score is always written by `eval_pipeline.load.save_results()`.
+- The GET endpoint is no longer mutating in the haisir sense — it reads results that eval_pipeline has already written, or triggers eval_pipeline synchronously if grading hasn't run yet.
+
 ### 1. Score finalization race condition — DECIDED: eval_pipeline re-sums
 
 ### 14. `answers` table — DECIDED: remove

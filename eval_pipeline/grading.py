@@ -4,7 +4,7 @@ Type-dispatched grading with weighted scoring and partial credit support.
 Works with haiguru's SQLAlchemy model instances directly.
 """
 
-from shared.normalization import normalize_option_text, options_match
+from eval_pipeline.normalization import normalize_option_text, options_match
 
 
 def grade_question(user_answer: str | None, points: int, question) -> tuple[bool | None, float]:

@@ -227,11 +227,12 @@ The student submits all answers in one request. The submission endpoint:
 2. Marks the session `status = "completed"` and sets `finished_at`.
    **`exam_sessions.score` is NOT written here** — it remains `NULL` after
    submission. Score is populated later:
-   - **Objective-only sessions**: by `GET /session/{id}/answers` (the review
-     endpoint), which grades lazily and calls `_finalize_session()` to write
-     the raw earned-mark sum.
-   - **Sessions with essay or handwritten answers**: by the `eval_pipeline`,
-     which writes `earned_points` per question then updates `exam_sessions.score`.
+   - **All sessions**: by the `eval_pipeline`, which writes `earned_points` per
+     question then updates `exam_sessions.score`. The `GET /session/{id}/answers`
+     review endpoint invokes `eval_pipeline` (as a function call) if grading has
+     not yet run, rather than doing inline grading itself. `eval_pipeline` is the
+     single authoritative grading path — there is no parallel inline grading in
+     the API layer (Decision #15).
 
 > **Note:** This mirrors haisir's `POST /session/{session_id}/submit` exactly.
 > In haisir, `earned_points` and `is_correct` for objective questions are persisted
@@ -354,7 +355,7 @@ session questions — not a percentage.
 categories
   └── course_path_nodes (grade → subject → course)
         └── topics
-              ├── topic_contents ──→ data_topic_content_vectors (RAG / pgvector)
+              ├── topic_contents ──→ topic_content_vectors (RAG / pgvector)
               ├── questions ◄────────────────────────────────────────────────────┐
               └── paragraph_questions (stimulus blocks)                          │
                     └── question_ids[] ─────────────────────────────────────→ questions
@@ -381,13 +382,11 @@ Student submits → exam_session_questions.user_answer populated for each questi
 Session status → "completed", finished_at set
 exam_sessions.score → NULL  ← NOT written at submission
 
-                    [OBJECTIVE-ONLY PATH — lazy grading on review GET]
-GET /session/{id}/answers  (mutating GET)
-  ├── grades each question via grade_question()  (writes earned_points, is_correct if not already set)
-  └── calls _finalize_session() → writes exam_sessions.score = sum(earned_points)
+                    [GRADING — all sessions route through eval_pipeline (Decision #15)]
+GET /session/{id}/answers
+  └── if earned_points IS NULL → invokes eval_pipeline (function call, not subprocess)
 
-                    [EVALUATION PIPELINE — equiv. of haisir human review]
-eval_pipeline  (for sessions with essay questions or handwritten answers)
+eval_pipeline  (single authoritative grading path — objective, essay, and handwritten)
   reads esq where earned_points IS NULL
     ├── if user_answer starts with "image:" → strip prefix → OCR per-question image → overwrite user_answer
     ├── grade with shared/grading.py (objective) or LLM judge (essay)
