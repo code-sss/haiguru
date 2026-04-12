@@ -129,35 +129,41 @@ uv run python populate_hierarchy.py --content-root C:/github/siva/SVC
 
 ### Step 2 — Load topic content and exercises (OCR → DB)
 
-Runs OCR on images (extract), reads and parses the `.md` files via an LLM (transform), then loads into DB tables (load). Use `--type` to control what is processed:
+Runs OCR on images (extract), reads and parses the `.md` files via an LLM (transform), then loads into DB tables (load). Use explicit flags to control what is processed:
 
-| `--type` | OCR source | Loaded into |
+| Flag | OCR source | Loaded into |
 |---|---|---|
-| `contents` (default) | `inputs/contents/` | `topic_contents` |
-| `exercises` | `inputs/exercises/` | `questions`, `paragraph_questions` |
-| `both` | both | all of the above |
+| `--etl-contents` | `inputs/contents/` | `topic_contents` |
+| `--etl-exercises` | `inputs/exercises/` | `questions`, `paragraph_questions` |
+| `--load-exercises <file>` | *(JSON file — no OCR)* | `questions`, `paragraph_questions`, `exam_templates`, `exam_template_questions` |
 
 ```bash
 # Full run (OCR + load) — theory content only
-uv run python -m etl_pipeline --topic-path "SVC/GRADE_7/MATHEMATICS/VOLUME_1/INTEGERS"
+uv run python -m etl_pipeline --topic-path "SVC/GRADE_7/MATHEMATICS/VOLUME_1/INTEGERS" --etl-contents
 
-# Load exercises (OCR already done)
-uv run python -m etl_pipeline --topic-path "..." --type exercises --skip-extract
+# Full run — exercises only
+uv run python -m etl_pipeline --topic-path "..." --etl-exercises
 
 # Load both contents and exercises from existing OCR output
-uv run python -m etl_pipeline --topic-path "..." --type both --skip-extract
+uv run python -m etl_pipeline --topic-path "..." --etl-contents --etl-exercises --skip-extract
 
-# OCR both types, then load exercises only
-uv run python -m etl_pipeline --topic-path "..." --type exercises
+# Load exercises from JSON — topic path derives course node + topic
+uv run python -m etl_pipeline --load-exercises qa-sample.json --topic-path "..."
+
+# Load exercises from JSON — supply course node UUID directly (topic optional)
+uv run python -m etl_pipeline --load-exercises qa-sample.json --course-node-id <uuid>
+uv run python -m etl_pipeline --load-exercises qa-sample.json --course-node-id <uuid> --topic-id <uuid>
 
 # OCR only — inspect output before loading
-uv run python -m etl_pipeline --topic-path "..." --skip-load
+uv run python -m etl_pipeline --topic-path "..." --etl-contents --skip-load
 
 # Re-process all images (overwrite existing .md files)
-uv run python -m etl_pipeline --topic-path "..." --overwrite
+uv run python -m etl_pipeline --topic-path "..." --etl-contents --overwrite
 ```
 
-**Exercises parsing:** Each `exercises_outputs/raw_response_*.md` file is sent to an LLM (`TRANSFORM_MODEL`, default `qwen3.5:9b` via Ollama) which returns a structured JSON array of questions. No fixed markers are required in the OCR output. See `etl_pipeline/llm_transform_exercises.py` and the [LLM Providers](#llm-providers) section for how to use a different model.
+**Exercises parsing (OCR path):** Each `exercises_outputs/raw_response_*.md` file is sent to an LLM (`TRANSFORM_MODEL`, default `qwen3.5:9b` via Ollama) which returns a structured JSON array of questions. No fixed markers are required in the OCR output. See `etl_pipeline/llm_transform_exercises.py` and the [LLM Providers](#llm-providers) section for how to use a different model.
+
+**Exercises from JSON (`--load-exercises`):** Accepts a hand-authored JSON file. Creates `questions`, `paragraph_questions`, an `exam_template`, and `exam_template_questions` in one pass. Options are normalised from `{id, text}` objects to plain strings; letter-based `correct_answers` are resolved to option text; `passing_score > 1` is treated as a percentage (e.g. `80` → `0.8`). Requires either `--topic-path` or `--course-node-id` to anchor the exam template to the course hierarchy.
 
 **Prerequisites for OCR:** Ollama must be running with the `glm-ocr-optimized` model pulled, and the topic folder must have `prompts/contents_prompt.md` (and `exercises_prompt.md` for exercises).
 
@@ -295,7 +301,7 @@ RERANK_MODEL=
 `TRANSFORM_MODEL` can also be overridden per-run without changing `.env`:
 
 ```bash
-uv run python -m etl_pipeline --topic-path "..." --type exercises \
+uv run python -m etl_pipeline --topic-path "..." --etl-exercises \
   --transform-model "anthropic://claude-opus-4-5"
 ```
 
@@ -307,9 +313,9 @@ uv run python -m etl_pipeline --topic-path "..." --type exercises \
 
 ```bash
 # Load theory content
-uv run python -m etl_pipeline --topic-path "SVC/GRADE_7/MATHEMATICS/VOLUME_1/INTEGERS"
-# Load exercises
-uv run python -m etl_pipeline --topic-path "SVC/GRADE_7/MATHEMATICS/VOLUME_1/INTEGERS" --type exercises --skip-extract
+uv run python -m etl_pipeline --topic-path "SVC/GRADE_7/MATHEMATICS/VOLUME_1/INTEGERS" --etl-contents
+# Load exercises (OCR already done)
+uv run python -m etl_pipeline --topic-path "SVC/GRADE_7/MATHEMATICS/VOLUME_1/INTEGERS" --etl-exercises --skip-extract
 uv run python -m embed_pipeline --topic-id <uuid>
 ```
 
@@ -318,7 +324,7 @@ uv run python -m embed_pipeline --topic-id <uuid>
 ```bash
 uv run alembic upgrade head
 uv run python populate_hierarchy.py --content-root C:/github/siva/SVC
-uv run python -m etl_pipeline --topic-path "..." --skip-extract   # repeat per topic
+uv run python -m etl_pipeline --topic-path "..." --etl-contents --etl-exercises --skip-extract   # repeat per topic
 uv run python -m embed_pipeline
 ```
 
@@ -328,14 +334,14 @@ Delete the bad `.md` file and re-run (only the missing file is regenerated):
 
 ```bash
 rm "SVC/.../outputs/contents_outputs/raw_response_IMG_001.md"
-uv run python -m etl_pipeline --topic-path "..."
+uv run python -m etl_pipeline --topic-path "..." --etl-contents
 uv run python -m embed_pipeline --topic-id <uuid>
 ```
 
 Or re-process all images in a topic:
 
 ```bash
-uv run python -m etl_pipeline --topic-path "..." --overwrite
+uv run python -m etl_pipeline --topic-path "..." --etl-contents --overwrite
 uv run python -m embed_pipeline --topic-id <uuid>
 ```
 
@@ -348,9 +354,11 @@ uv run python -m embed_pipeline --topic-id <uuid>
 | `categories` | `populate_hierarchy.py` (also ETL as safety net) |
 | `course_path_nodes` | `populate_hierarchy.py` (also ETL as safety net) |
 | `topics` | `populate_hierarchy.py` (also ETL as safety net) |
-| `topic_contents` | `etl_pipeline --type contents` — one row per `.md` file |
-| `questions` | `etl_pipeline --type exercises` — one row per parsed question |
-| `paragraph_questions` | `etl_pipeline --type exercises` — one per passage, references question UUIDs |
+| `topic_contents` | `etl_pipeline --etl-contents` — one row per `.md` file |
+| `questions` | `etl_pipeline --etl-exercises` or `--load-exercises` — one row per parsed question |
+| `paragraph_questions` | `etl_pipeline --etl-exercises` or `--load-exercises` — one per passage, references question UUIDs |
+| `exam_templates` | `etl_pipeline --load-exercises` — one row per JSON file |
+| `exam_template_questions` | `etl_pipeline --load-exercises` — one row per question, links to exam template |
 | `topic_content_vectors` | `embed_pipeline` — pgvector table, not Alembic-managed |
 
 All write operations are upserts — re-running any step is always safe.

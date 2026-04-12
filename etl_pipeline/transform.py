@@ -1,5 +1,6 @@
 """Transform step: read OCR output .md files and parse them into structured dicts."""
 
+import json
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -13,6 +14,7 @@ class TransformResult:
     """Parsed content ready for the load step."""
     content_type: str          # "contents" | "exercises"
     items: list[dict] = field(default_factory=list)
+    exam_template_meta: dict | None = None  # set only when loading from a JSON file
 
 
 def transform(
@@ -56,4 +58,60 @@ def transform(
         print(f"    → {len(questions)} question(s)")
         items.extend(questions)
     return TransformResult(content_type=content_type, items=items)
+
+
+def _normalize_question(q: dict, passage: str | None, paragraph_title: str | None) -> dict:
+    options = [o["text"] for o in q.get("options", [])]
+    id_to_text = {o["id"]: o["text"] for o in q.get("options", [])}
+    correct_answers = [id_to_text.get(a, a) for a in q.get("correct_answers", [])]
+    return {
+        "question_type": q["question_type"],
+        "question_text": q["question_text"],
+        "options": options,
+        "correct_answers": correct_answers,
+        "passage": passage,
+        "paragraph_title": paragraph_title,
+        "points": q.get("points", 1),
+    }
+
+
+def transform_json_exercises(json_path: str) -> TransformResult:
+    """Convert a hand-authored JSON exercises file into a TransformResult.
+
+    Handles the qa-sample.json format: top-level items are either
+    type=question (standalone) or type=paragraph (with nested questions).
+    Options are normalized to plain strings and correct_answers are resolved
+    from option IDs to option text.
+
+    Top-level metadata (title, description, passing_score, duration_minutes)
+    is captured in exam_template_meta. passing_score > 1 is treated as a
+    percentage and converted to a decimal fraction (e.g. 80 → 0.8).
+    """
+    with open(json_path, encoding="utf-8") as f:
+        data = json.load(f)
+
+    flat: list[dict] = []
+    for item in data.get("items", []):
+        if item["type"] == "question":
+            flat.append(_normalize_question(item, passage=None, paragraph_title=None))
+        elif item["type"] == "paragraph":
+            passage = item["content"]
+            title = item["title"]
+            for q in item.get("questions", []):
+                flat.append(_normalize_question(q, passage=passage, paragraph_title=title))
+
+    passing_score = data.get("passing_score")
+    if passing_score is not None and passing_score > 1:
+        passing_score = passing_score / 100
+
+    exam_template_meta = {
+        "title": data.get("title", "Untitled Exam"),
+        "description": data.get("description"),
+        "passing_score": passing_score,
+        "duration_minutes": data.get("duration_minutes"),
+        "mode": data.get("mode", "static"),
+    }
+
+    print(f"[Transform] {json_path} — {len(flat)} question(s) from JSON")
+    return TransformResult(content_type="exercises", items=flat, exam_template_meta=exam_template_meta)
 

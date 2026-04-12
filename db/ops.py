@@ -2,7 +2,7 @@
 
 from sqlalchemy.orm import Session
 
-from db.models import Category, CoursePathNode, ParagraphQuestion, Question, Topic, TopicContent
+from db.models import Category, CoursePathNode, ExamTemplate, ExamTemplateQuestion, ParagraphQuestion, Question, Topic, TopicContent
 
 
 def get_or_create_category(session: Session, name: str) -> Category:
@@ -96,23 +96,78 @@ def get_or_create_question(
     return obj
 
 
+def get_or_create_exam_template(
+    session: Session,
+    course_node_id,
+    title: str,
+    description: str | None,
+    mode: str,
+    passing_score: float | None,
+    duration_minutes: int | None,
+    created_by,
+) -> ExamTemplate:
+    obj = session.query(ExamTemplate).filter_by(title=title, course_path_node_id=course_node_id).first()
+    if obj:
+        obj.description = description
+        obj.mode = mode
+        obj.passing_score = passing_score
+        obj.duration_minutes = duration_minutes
+        print(f"  Updated exam template: {title}")
+    else:
+        obj = ExamTemplate(
+            course_path_node_id=course_node_id,
+            title=title,
+            description=description,
+            mode=mode,
+            passing_score=passing_score,
+            duration_minutes=duration_minutes,
+            created_by=created_by,
+        )
+        session.add(obj)
+        session.flush()
+        print(f"  Created exam template: {title}")
+    return obj
+
+
+def create_exam_template_question(
+    session: Session,
+    exam_template_id,
+    question_id,
+    paragraph_question_id,
+    order: int,
+    points: int,
+) -> ExamTemplateQuestion:
+    obj = ExamTemplateQuestion(
+        exam_template_id=exam_template_id,
+        question_id=question_id,
+        paragraph_question_id=paragraph_question_id,
+        order=order,
+        points=points,
+    )
+    session.add(obj)
+    session.flush()
+    return obj
+
+
 def get_or_create_paragraph_question(
     session: Session,
-    passage: str,
+    content: str,
+    title: str,
     topic_id,
     question_ids: list,
 ) -> ParagraphQuestion:
-    obj = session.query(ParagraphQuestion).filter_by(topic_id=topic_id, passage=passage).first()
+    obj = session.query(ParagraphQuestion).filter_by(topic_id=topic_id, content=content).first()
     if obj:
         obj.question_ids = question_ids
-        print(f"  Updated paragraph question: {passage[:60]}")
+        print(f"  Updated paragraph question: {title}")
     else:
         obj = ParagraphQuestion(
             topic_id=topic_id,
-            passage=passage,
+            content=content,
+            title=title,
             question_ids=question_ids,
         )
         session.add(obj)
         session.flush()
-        print(f"  Created paragraph question: {passage[:60]}")
+        print(f"  Created paragraph question: {title}")
     return obj

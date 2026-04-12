@@ -1,0 +1,111 @@
+{
+    "version": 2,
+    "title": "Year 5 Science — Energy Unit Assessment",
+    "description": "Mixed question types covering energy concepts, flight, and propulsion",
+    "passing_score": 80,
+    "duration_minutes": 45,
+    "items": [
+        {
+            "type": "question",
+            "question_type": "single_choice",
+            "question_text": "Which of these is a renewable source of energy?",
+            "points": 1,
+            "options": [
+                { "id": "a", "text": "Coal" },
+                { "id": "b", "text": "Natural gas" },
+                { "id": "c", "text": "Solar power" },
+                { "id": "d", "text": "Petroleum" }
+            ],
+            "correct_answers": ["c"],
+            "explanation": "Solar power is renewable because the sun continuously provides energy.",
+            "difficulty": "easy",
+            "tags": ["energy", "renewable"]
+        },
+        {
+            "type": "question",
+            "question_type": "true_false",
+            "question_text": "Wind energy is a form of kinetic energy.",
+            "points": 1,
+            "options": [
+                { "id": "true", "text": "True" },
+                { "id": "false", "text": "False" }
+            ],
+            "correct_answers": ["true"],
+            "explanation": "Wind is moving air, and moving objects have kinetic energy.",
+            "difficulty": "easy",
+            "tags": ["energy", "kinetic"]
+        },
+        {
+            "type": "question",
+            "question_type": "multiple_choice",
+            "question_text": "Which of the following are examples of potential energy? (Select all that apply)",
+            "points": 2,
+            "options": [
+                { "id": "a", "text": "A stretched rubber band" },
+                { "id": "b", "text": "A ball rolling down a hill" },
+                { "id": "c", "text": "Water stored behind a dam" },
+                { "id": "d", "text": "A book on a high shelf" }
+            ],
+            "correct_answers": ["a", "c", "d"],
+            "explanation": "Stretched rubber band = elastic PE, water behind dam = gravitational PE, book on shelf = gravitational PE. Rolling ball = kinetic energy.",
+            "difficulty": "medium",
+            "tags": ["energy", "potential"]
+        },
+        {
+            "type": "paragraph",
+            "title": "Flight and Lift",
+            "content": "Read the following passage about how aeroplanes fly.\n\nAeroplanes fly because of the shape of their wings, called aerofoils. When air flows over the curved top surface of the wing, it moves faster than the air flowing under the flat bottom surface. According to Bernoulli's principle, faster-moving air has lower pressure. This difference in air pressure above and below the wing creates an upward force called lift. For an aeroplane to take off, the lift force must be greater than the weight (gravity) pulling it down.\n\nThe four forces acting on an aeroplane in flight are: lift (upward), weight (downward), thrust (forward from engines), and drag (backward from air resistance).",
+            "questions": [
+                {
+                    "type": "question",
+                    "question_type": "single_choice",
+                    "question_text": "What is the upward force on an aeroplane wing called?",
+                    "points": 1,
+                    "options": [
+                        { "id": "a", "text": "Thrust" },
+                        { "id": "b", "text": "Drag" },
+                        { "id": "c", "text": "Lift" },
+                        { "id": "d", "text": "Weight" }
+                    ],
+                    "correct_answers": ["c"],
+                    "explanation": "Lift is the upward force created by air pressure difference above and below the wing.",
+                    "difficulty": "easy",
+                    "tags": ["flight", "forces"]
+                },
+                {
+                    "type": "question",
+                    "question_type": "fill_in_the_blank",
+                    "question_text": "The shape of an aeroplane wing is called an ___.",
+                    "points": 1,
+                    "options": [],
+                    "correct_answers": ["aerofoil", "airfoil"],
+                    "explanation": "An aerofoil (or airfoil) is the cross-sectional shape of a wing designed to produce lift.",
+                    "difficulty": "medium",
+                    "tags": ["flight", "terminology"]
+                }
+            ]
+        },
+        {
+            "type": "question",
+            "question_type": "fill_in_the_blank",
+            "question_text": "The force that opposes the forward motion of an aeroplane through air is called ___.",
+            "points": 1,
+            "options": [],
+            "correct_answers": ["drag", "air resistance", "air drag"],
+            "explanation": "Drag (air resistance) is the force that opposes an object's motion through air.",
+            "difficulty": "easy",
+            "tags": ["flight", "forces"]
+        },
+        {
+            "type": "question",
+            "question_type": "essay",
+            "question_text": "Explain how a hot air balloon rises and what forces are involved. Include at least two scientific concepts in your answer.",
+            "points": 5,
+            "options": [],
+            "correct_answers": [],
+            "explanation": "Expected concepts: buoyancy, heated air is less dense, upthrust exceeds weight, convection. A strong answer mentions density, Archimedes' principle, and the role of the burner.",
+            "difficulty": "hard",
+            "tags": ["flight", "buoyancy", "forces"]
+        }
+    ]
+}
