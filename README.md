@@ -78,9 +78,11 @@ The ETL pipeline expects source content rooted at a content root directory with 
                     │       └── IMG_*.jpg
                     ├── outputs/
                     │   ├── contents_outputs/       ← topic_contents (content_type=text), one per page
-                    │   │   └── raw_response_IMG_*.md
+                    │   │   ├── raw_response_IMG_*.md   ← OCR output (extract step)
+                    │   │   └── contents.json           ← transform intermediary (saved after LLM parse)
                     │   └── exercises_outputs/      ← exercise OCR outputs
-                    │       └── raw_response_IMG_*.md
+                    │       ├── raw_response_IMG_*.md   ← OCR output (extract step)
+                    │       └── exercises.json          ← transform intermediary in qa-sample.json format
                     └── prompts/
                         ├── contents_prompt.md      ← required before running OCR on contents
                         └── exercises_prompt.md     ← required before running OCR on exercises
@@ -104,9 +106,11 @@ C:/github/siva/SVC/
                     ├── outputs/
                     │   ├── contents_outputs/
                     │   │   ├── raw_response_IMG_0001.md
-                    │   │   └── raw_response_IMG_0002.md
+                    │   │   ├── raw_response_IMG_0002.md
+                    │   │   └── contents.json
                     │   └── exercises_outputs/
-                    │       └── raw_response_IMG_0003.md
+                    │       ├── raw_response_IMG_0003.md
+                    │       └── exercises.json
                     └── prompts/
                         ├── contents_prompt.md
                         └── exercises_prompt.md
@@ -129,9 +133,19 @@ uv run python populate_hierarchy.py --content-root C:/github/siva/SVC
 
 ### Step 2 — Load topic content and exercises (OCR → DB)
 
-Runs OCR on images (extract), reads and parses the `.md` files via an LLM (transform), then loads into DB tables (load). Use explicit flags to control what is processed:
+The pipeline has three stages that can be run and inspected independently:
 
-| Flag | OCR source | Loaded into |
+```
+images → [extract] → .md files → [transform] → JSON file → [load] → DB
+```
+
+| Stage skip flag | Effect |
+|---|---|
+| `--skip-extract` | Skip OCR; use existing `.md` files |
+| `--skip-transform` | Skip LLM parse; no JSON written |
+| `--skip-load` | Skip DB write; JSON is written but not loaded |
+
+| Mode flag | OCR source | Loaded into |
 |---|---|---|
 | `--etl-contents` | `inputs/contents/` | `topic_contents` |
 | `--etl-exercises` | `inputs/exercises/` | `questions`, `paragraph_questions` |
@@ -139,31 +153,41 @@ Runs OCR on images (extract), reads and parses the `.md` files via an LLM (trans
 
 ```bash
 # Full run (OCR + load) — theory content only
-uv run python -m etl_pipeline --topic-path "SVC/GRADE_7/MATHEMATICS/VOLUME_1/INTEGERS" --etl-contents
+uv run python -m etl_pipeline --topic-path "C:/github/siva/SVC/GRADE_7/MATHEMATICS/VOLUME_1/INTEGERS" --etl-contents
 
 # Full run — exercises only
 uv run python -m etl_pipeline --topic-path "..." --etl-exercises
 
-# Load both contents and exercises from existing OCR output
+# Step by step — OCR only, then inspect .md files
+uv run python -m etl_pipeline --topic-path "..." --etl-exercises --skip-transform --skip-load
+
+# Step by step — transform only, then inspect exercises.json
+uv run python -m etl_pipeline --topic-path "..." --etl-exercises --skip-extract --skip-load
+
+# Step by step — load from saved exercises.json (edit it first if needed)
+uv run python -m etl_pipeline --load-exercises "outputs/exercises_outputs/exercises.json" --topic-path "..."
+
+# Re-run transform + load on existing .md files (skip OCR)
 uv run python -m etl_pipeline --topic-path "..." --etl-contents --etl-exercises --skip-extract
 
-# Load exercises from JSON — topic path derives course node + topic
+# Load exercises from a hand-authored JSON — topic path derives course node + topic
 uv run python -m etl_pipeline --load-exercises qa-sample.json --topic-path "..."
 
 # Load exercises from JSON — supply course node UUID directly (topic optional)
 uv run python -m etl_pipeline --load-exercises qa-sample.json --course-node-id <uuid>
 uv run python -m etl_pipeline --load-exercises qa-sample.json --course-node-id <uuid> --topic-id <uuid>
 
-# OCR only — inspect output before loading
-uv run python -m etl_pipeline --topic-path "..." --etl-contents --skip-load
-
 # Re-process all images (overwrite existing .md files)
 uv run python -m etl_pipeline --topic-path "..." --etl-contents --overwrite
 ```
 
-**Exercises parsing (OCR path):** Each `exercises_outputs/raw_response_*.md` file is sent to an LLM (`TRANSFORM_MODEL`, default `qwen3.5:9b` via Ollama) which returns a structured JSON array of questions. No fixed markers are required in the OCR output. See `etl_pipeline/llm_transform_exercises.py` and the [LLM Providers](#llm-providers) section for how to use a different model.
+**Intermediary JSON files:** After the transform step, both content types save a JSON file alongside the `.md` files:
+- `outputs/contents_outputs/contents.json` — array of `{title, text, order}` objects
+- `outputs/exercises_outputs/exercises.json` — qa-sample.json format (see below); can be fed directly to `--load-exercises` to reload without re-running OCR or the LLM transform
 
-**Exercises from JSON (`--load-exercises`):** Accepts a hand-authored JSON file. Creates `questions`, `paragraph_questions`, an `exam_template`, and `exam_template_questions` in one pass. Options are normalised from `{id, text}` objects to plain strings; letter-based `correct_answers` are resolved to option text; `passing_score > 1` is treated as a percentage (e.g. `80` → `0.8`). Requires either `--topic-path` or `--course-node-id` to anchor the exam template to the course hierarchy.
+**Exercises parsing (OCR path):** Each `exercises_outputs/raw_response_*.md` file is sent to an LLM (`TRANSFORM_MODEL`, default `qwen3.5:9b` via Ollama) which returns items in qa-sample.json format — structured `{id, text}` options, option-ID correct_answers, explanation, difficulty, tags, and paragraph/passage support. The combined result is saved to `exercises.json` before being normalized for the load step. See the [LLM Providers](#llm-providers) section for how to use a different model.
+
+**Exercises from JSON (`--load-exercises`):** Accepts a hand-authored JSON file (or the saved `exercises.json`). Creates `questions`, `paragraph_questions`, an `exam_template`, and `exam_template_questions` in one pass. Options are normalised from `{id, text}` objects to plain strings; letter-based `correct_answers` are resolved to option text; `passing_score > 1` is treated as a percentage (e.g. `80` → `0.8`). Requires either `--topic-path` or `--course-node-id` to anchor the exam template to the course hierarchy.
 
 **Prerequisites for OCR:** Ollama must be running with the `glm-ocr-optimized` model pulled, and the topic folder must have `prompts/contents_prompt.md` (and `exercises_prompt.md` for exercises).
 
@@ -312,10 +336,10 @@ uv run python -m etl_pipeline --topic-path "..." --etl-exercises \
 ### New topic — first time
 
 ```bash
-# Load theory content
-uv run python -m etl_pipeline --topic-path "SVC/GRADE_7/MATHEMATICS/VOLUME_1/INTEGERS" --etl-contents
-# Load exercises (OCR already done)
-uv run python -m etl_pipeline --topic-path "SVC/GRADE_7/MATHEMATICS/VOLUME_1/INTEGERS" --etl-exercises --skip-extract
+# OCR contents + exercises
+uv run python -m etl_pipeline --topic-path "SVC/GRADE_7/MATHEMATICS/VOLUME_1/INTEGERS" --etl-contents --etl-exercises
+# Inspect .md files and JSON before loading — edit exercises.json if needed
+uv run python -m etl_pipeline --topic-path "SVC/GRADE_7/MATHEMATICS/VOLUME_1/INTEGERS" --etl-contents --etl-exercises --skip-extract
 uv run python -m embed_pipeline --topic-id <uuid>
 ```
 
@@ -324,6 +348,7 @@ uv run python -m embed_pipeline --topic-id <uuid>
 ```bash
 uv run alembic upgrade head
 uv run python populate_hierarchy.py --content-root C:/github/siva/SVC
+# Reload from saved JSON files (no re-OCR needed if outputs/ already exist)
 uv run python -m etl_pipeline --topic-path "..." --etl-contents --etl-exercises --skip-extract   # repeat per topic
 uv run python -m embed_pipeline
 ```

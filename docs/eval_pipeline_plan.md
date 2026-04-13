@@ -3,8 +3,8 @@
 ## Background
 
 For the full data model, question types, exam creation flow, and how answers
-flow through the system, see [EXAM_FLOW.md](./EXAM_FLOW.md).
-Review decisions that shaped this plan are in [DECISIONS.md](./DECISIONS.md).
+flow through the system, see [exam_flow.md](./exam_flow.md).
+Review decisions that shaped this plan are in [decisions.md](./decisions.md).
 
 ---
 

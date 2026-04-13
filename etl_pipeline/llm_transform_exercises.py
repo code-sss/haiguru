@@ -1,7 +1,7 @@
-"""LLM-based transform for exercises: parse raw OCR markdown into structured question dicts.
+"""LLM-based transform for exercises: parse raw OCR markdown into qa-sample.json format items.
 
 Instead of relying on fixed markers in the OCR output, this module sends the raw text to a
-local Ollama text model and asks it to return a JSON array of question objects.
+local Ollama text model and asks it to return a JSON array of items in qa-sample.json format.
 """
 
 import json
@@ -16,36 +16,61 @@ _PROMPT_TEMPLATE = """\
 /no_think
 You are an expert at parsing raw OCR text from school textbook exercise pages.
 
-Given the raw text below, extract ALL questions and return them as a JSON array.
-Each element must follow this exact structure:
+Given the raw text below, extract ALL questions and return them as a JSON array of items.
+Each item must be one of these two structures:
 
+Standalone question:
 {{
+  "type": "question",
   "question_type": "<type>",
-  "question_text": "<full question text, including sub-parts if any>",
-  "options": ["<option A text>", "<option B text>", ...],
-  "correct_answers": ["<answer text>"],
-  "passage": "<passage text>" or null
+  "question_text": "<full question text>",
+  "options": [{{"id": "a", "text": "<option text>"}}, {{"id": "b", "text": "<option text>"}}, ...],
+  "correct_answers": ["a"],
+  "explanation": "<explanation or null>",
+  "difficulty": "easy|medium|hard",
+  "tags": ["<tag>", ...]
+}}
+
+Paragraph/passage group (linked comprehension):
+{{
+  "type": "paragraph",
+  "title": "<short title for the passage>",
+  "content": "<full passage text>",
+  "questions": [
+    {{ <same structure as standalone question above> }},
+    ...
+  ]
 }}
 
 Rules for question_type (pick exactly one):
-- "essay"            — open-ended; no options (VSAQ / SAQ / LAQ sections)
-- "fill_in_the_blank"— sentence with a blank to fill
-- "single_choice"    — exactly one correct answer from (A)/(B)/(C)/(D) options
-- "multiple_choice"  — more than one correct answer from options
-- "true_false"       — True / False question
+- "essay"             — open-ended; no options (VSAQ / SAQ / LAQ sections)
+- "fill_in_the_blank" — sentence with a blank to fill
+- "single_choice"     — exactly one correct answer from (A)/(B)/(C)/(D) options
+- "multiple_choice"   — more than one correct answer from options
+- "true_false"        — True / False question
 
 Rules for options:
-- List the option texts WITHOUT the letter prefix, e.g. ["18", "24", "30"].
-- Empty list [] when there are no options.
+- Use letter IDs: "a", "b", "c", "d" in order.
+- Text is the option content WITHOUT the letter prefix, e.g. {{"id": "a", "text": "18"}}.
+- Empty list [] when there are no options (essay, fill_in_the_blank).
 
 Rules for correct_answers:
-- If the answer is given in the text, include it (as the option text, not the letter).
-- If not shown, use an empty list [].
+- Use option IDs (e.g. ["a", "c"]), not the option text.
+- If the answer is not shown, use an empty list [].
 
-Rules for passage:
-- For Linked Comprehension (LCT) or paragraph questions that follow a shared passage,
-  set "passage" to the passage text for every sub-question in that group.
-- For standalone questions set "passage" to null.
+Rules for explanation:
+- Include any answer explanation or working shown in the text.
+- Use null if none is present.
+
+Rules for difficulty:
+- "easy" for recall/definition questions, "medium" for application, "hard" for multi-step reasoning.
+- Default to "medium" if uncertain.
+
+Rules for paragraph groups:
+- Use "paragraph" ONLY when 2 or more questions share the exact same passage or reading excerpt.
+- A single word problem or scenario with one question is NOT a paragraph — embed the full scenario text into question_text and return it as a standalone question.
+- Set "content" to the full passage text.
+- Each sub-question follows the standalone question structure.
 
 Do NOT include:
 - Section headings (VSAQ, SAQ, EXERCISE-1, etc.)
@@ -60,14 +85,14 @@ Raw exercise text:
 JSON array:"""
 
 
-def llm_parse_exercises(md_path: Path, model: str) -> list[dict]:
+def llm_extract_exercises_items(md_path: Path, model: str) -> list[dict]:
     """Use an LLM (Ollama, OpenAI, Anthropic, or TogetherAI) to parse a raw exercises
-    markdown file. The model spec follows the same provider prefix convention as the
-    rest of the codebase (e.g. "openai://gpt-4o-mini", "anthropic://...", or a plain
-    Ollama model name).
+    markdown file into qa-sample.json format items.
 
-    Returns a list of question dicts with keys:
-        question_type, question_text, options, correct_answers, passage
+    The model spec follows the same provider prefix convention as the rest of the
+    codebase (e.g. "openai://gpt-4o-mini", "anthropic://...", or a plain Ollama model name).
+
+    Returns a list of item dicts, each with type="question" or type="paragraph".
     Returns an empty list (with a warning) on failure.
     """
     raw_text = md_path.read_text(encoding="utf-8").strip()
@@ -88,7 +113,7 @@ def llm_parse_exercises(md_path: Path, model: str) -> list[dict]:
         raise
     except Exception as exc:
         warnings.warn(
-            f"[llm_transform] Ollama call failed for {md_path.name}: {exc}",
+            f"[llm_transform] LLM call failed for {md_path.name}: {exc}",
             stacklevel=2,
         )
         return []
@@ -131,7 +156,7 @@ def llm_parse_exercises(md_path: Path, model: str) -> list[dict]:
         return []
 
     try:
-        questions = json.loads(cleaned[start : end + 1])
+        items = json.loads(cleaned[start : end + 1])
     except json.JSONDecodeError as exc:
         warnings.warn(
             f"[llm_transform] JSON parse error for {md_path.name}: {exc}\n"
@@ -140,17 +165,34 @@ def llm_parse_exercises(md_path: Path, model: str) -> list[dict]:
         )
         return []
 
-    # Normalise each entry to guarantee expected keys
+    # Normalise each item to guarantee expected keys
     normalised = []
-    for q in questions:
-        if not isinstance(q, dict):
+    for item in items:
+        if not isinstance(item, dict):
             continue
-        normalised.append({
-            "question_type": q.get("question_type", "essay"),
-            "question_text": q.get("question_text", ""),
-            "options": q.get("options") or [],
-            "correct_answers": q.get("correct_answers") or [],
-            "passage": q.get("passage"),
-        })
+        item_type = item.get("type", "question")
+        if item_type == "paragraph":
+            normalised.append({
+                "type": "paragraph",
+                "title": item.get("title", ""),
+                "content": item.get("content", ""),
+                "questions": [_normalise_question_item(q) for q in item.get("questions", [])],
+            })
+        else:
+            normalised.append(_normalise_question_item(item))
 
     return normalised
+
+
+def _normalise_question_item(q: dict) -> dict:
+    """Ensure a question item has all required keys in qa-sample.json format."""
+    return {
+        "type": "question",
+        "question_type": q.get("question_type", "essay"),
+        "question_text": q.get("question_text", ""),
+        "options": q.get("options") or [],
+        "correct_answers": q.get("correct_answers") or [],
+        "explanation": q.get("explanation"),
+        "difficulty": q.get("difficulty", "medium"),
+        "tags": q.get("tags") or [],
+    }

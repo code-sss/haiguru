@@ -6,7 +6,7 @@ from pathlib import Path
 
 from config import TRANSFORM_MODEL
 from .extract import TopicContext
-from .llm_transform_exercises import llm_parse_exercises
+from .llm_transform_exercises import llm_extract_exercises_items
 
 
 @dataclass
@@ -48,16 +48,34 @@ def transform(
                 print(f"  Skipping empty file: {md_path.name}")
                 continue
             items.append({"title": md_path.name, "text": text, "order": order})
+        out_path = outputs_dir / "contents.json"
+        out_path.write_text(json.dumps(items, ensure_ascii=False, indent=2), encoding="utf-8")
+        print(f"  Saved → {out_path.name}")
         return TransformResult(content_type=content_type, items=items)
 
-    # exercises — LLM-based parsing
-    items = []
+    # exercises — LLM-based parsing → qa-sample.json format
+    raw_items: list[dict] = []
     for md_path in md_files:
         print(f"  Parsing {md_path.name} via LLM ({transform_model})...")
-        questions = llm_parse_exercises(md_path, model=transform_model)
-        print(f"    → {len(questions)} question(s)")
-        items.extend(questions)
-    return TransformResult(content_type=content_type, items=items)
+        page_items = llm_extract_exercises_items(md_path, model=transform_model)
+        print(f"    → {len(page_items)} item(s)")
+        raw_items.extend(page_items)
+
+    out_path = outputs_dir / "exercises.json"
+    out_path.write_text(
+        json.dumps({"version": 2, "items": raw_items}, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    print(f"  Saved → {out_path.name}")
+
+    flat: list[dict] = []
+    for item in raw_items:
+        if item["type"] == "question":
+            flat.append(_normalize_question(item, passage=None, paragraph_title=None))
+        elif item["type"] == "paragraph":
+            for q in item.get("questions", []):
+                flat.append(_normalize_question(q, passage=item.get("content"), paragraph_title=item.get("title")))
+    return TransformResult(content_type=content_type, items=flat)
 
 
 def _normalize_question(q: dict, passage: str | None, paragraph_title: str | None) -> dict:

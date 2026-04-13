@@ -21,6 +21,7 @@ Flags:
     --topic-path            Topic folder path — required for --etl-* flags; also accepted by --load-exercises
                             to derive course node and create/look up the topic automatically
     --skip-extract          Skip OCR step (use existing .md files); applies to --etl-* flags
+    --skip-transform        Skip LLM transform step; use with --skip-load to run OCR only
     --skip-load             Skip DB load step
     --overwrite             Re-run OCR even if output files already exist
     --model                 Ollama OCR model name (default: glm-ocr-optimized)
@@ -49,6 +50,7 @@ def main(argv=None):
     parser.add_argument("--transform-model", default=None, help="Ollama text model for LLM-based exercise transform (default: TRANSFORM_MODEL from .env)")
     parser.add_argument("--overwrite", action="store_true", help="Re-run OCR even for already-processed images")
     parser.add_argument("--skip-extract", action="store_true", help="Skip OCR step (use existing .md files)")
+    parser.add_argument("--skip-transform", action="store_true", help="Skip LLM transform step (use --skip-transform --skip-load to run OCR only)")
     parser.add_argument("--skip-load", action="store_true", help="Skip DB load step")
     args = parser.parse_args(argv)
 
@@ -107,7 +109,18 @@ def main(argv=None):
 
     # Transform — read .md files and parse into structured dicts
     transform_model = args.transform_model or TRANSFORM_MODEL
-    results = [transform(ctx, content_type=t, transform_model=transform_model) for t in types_to_run]
+    if not args.skip_transform:
+        results = [transform(ctx, content_type=t, transform_model=transform_model) for t in types_to_run]
+    else:
+        print("[Transform] Skipped.")
+        results = []
+        for t in types_to_run:
+            json_path = ctx.outputs_dir / f"{t}_outputs" / f"{t}.json"
+            if json_path.exists():
+                print(f"[Transform] Loading existing {json_path.name} for {t}.")
+                results.append(transform_json_exercises(str(json_path)) if t == "exercises" else transform(ctx, content_type=t, transform_model=transform_model))
+            else:
+                print(f"[Transform] No existing {json_path.name} found for {t} — skipping load.")
 
     # Load — write to Postgres
     if not args.skip_load:

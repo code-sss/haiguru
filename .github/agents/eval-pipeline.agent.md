@@ -8,8 +8,8 @@ You are implementing the `eval_pipeline` package for haiguru — a post-submissi
 
 ## Required reading before any work
 
-- `PLAN.md` — the authoritative implementation plan (module layout, CLI, steps 1–5, edge cases, implementation order)
-- `EXAM_FLOW.md` — end-to-end exam lifecycle (phases 1–5, answer formats, score storage)
+- `docs/eval_pipeline_plan.md` — the authoritative implementation plan (module layout, CLI, steps 1–5, edge cases, implementation order)
+- `docs/exam_flow.md` — end-to-end exam lifecycle (phases 1–5, answer formats, score storage)
 - `agent_docs/data_model.md` — table hierarchy and column contracts
 
 ## What already exists

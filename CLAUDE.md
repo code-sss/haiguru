@@ -16,6 +16,11 @@ uv run alembic upgrade head
 uv run alembic revision --autogenerate -m "describe the change"
 uv run alembic upgrade head
 
+# ETL exercises — step by step
+uv run python -m etl_pipeline --topic-path <path> --etl-exercises --skip-transform --skip-load  # OCR only
+uv run python -m etl_pipeline --topic-path <path> --etl-exercises --skip-extract --skip-load    # transform only
+uv run python -m etl_pipeline --load-exercises <path>/outputs/exercises_outputs/exercises.json --topic-path <path>
+
 # Embed content into pgvector
 uv run python -m embed_pipeline
 

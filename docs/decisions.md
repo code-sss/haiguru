@@ -1,6 +1,6 @@
-# EXAM_FLOW.md Review — Decisions
+# exam_flow.md Review — Decisions
 
-Tracking decisions made while reviewing EXAM_FLOW.md (haiguru) against
+Tracking decisions made while reviewing exam_flow.md (haiguru) against
 EXAM_FLOW_HAISIR.md (haisir). Goal: haiguru should only **extend** haisir
 (not modify), with the primary extension being LLM/RAG grading for essay
 questions.
@@ -11,7 +11,7 @@ questions.
 
 ### 15. `GET /session/{id}/answers` grading path — DECIDED: route through eval_pipeline
 
-**Problem:** EXAM_FLOW.md describes a lazy-grading mutating GET that calls `grade_question()` inline (matching haisir). This creates two parallel grading paths — one in the API handler, one in `eval_pipeline` — with `shared/grading.py` as the bridge. Any grading bug would need to be fixed in two places, and `eval_pipeline`'s re-sum (Decision #1) could conflict with the GET's inline `_finalize_session()` call.
+**Problem:** exam_flow.md describes a lazy-grading mutating GET that calls `grade_question()` inline (matching haisir). This creates two parallel grading paths — one in the API handler, one in `eval_pipeline` — with `shared/grading.py` as the bridge. Any grading bug would need to be fixed in two places, and `eval_pipeline`'s re-sum (Decision #1) could conflict with the GET's inline `_finalize_session()` call.
 
 **Decision:** The `GET /session/{id}/answers` endpoint does **not** do inline grading. Instead it invokes `eval_pipeline` (as a function call, not a subprocess) and waits for results before returning. `eval_pipeline` remains the single authoritative grading path for all sessions — objective and subjective alike.
 
@@ -36,55 +36,55 @@ questions.
 
 ### 12. Explicit statement that objective grading is unchanged — DECIDED: add
 
-**Decision:** Add a one-liner to EXAM_FLOW.md stating objective grading uses the same `grade_question()` logic as haisir — only the essay path diverges.
+**Decision:** Add a one-liner to exam_flow.md stating objective grading uses the same `grade_question()` logic as haisir — only the essay path diverges.
 
-### 11. Score percentage conversion — DECIDED: doc gap, add to EXAM_FLOW.md
+### 11. Score percentage conversion — DECIDED: doc gap, add to exam_flow.md
 
 **Problem:** Haisir documents `round(score / total_marks * 100)` for session history display. haiguru's doc omits it.
 
-**Decision:** Add to EXAM_FLOW.md.
+**Decision:** Add to exam_flow.md.
 
-### 10. Multiple-choice partial credit formula — DECIDED: doc gap, add to EXAM_FLOW.md
+### 10. Multiple-choice partial credit formula — DECIDED: doc gap, add to exam_flow.md
 
 **Problem:** Haisir documents the exact partial credit formula for multiple_choice. haiguru's doc omits it but should use identical objective grading.
 
-**Decision:** Add the formula to EXAM_FLOW.md's grading section.
+**Decision:** Add the formula to exam_flow.md's grading section.
 
-### 9. `paragraph_questions` — DECIDED: add missing fields to EXAM_FLOW.md
+### 9. `paragraph_questions` — DECIDED: add missing fields to exam_flow.md
 
-**Problem:** `tags` (JSONB) and `difficulty` (String) exist in schema but are missing from EXAM_FLOW.md's `paragraph_questions` field table. `topic_id` is already listed correctly.
+**Problem:** `tags` (JSONB) and `difficulty` (String) exist in schema but are missing from exam_flow.md's `paragraph_questions` field table. `topic_id` is already listed correctly.
 
-**Decision:** Add `tags` and `difficulty` to the field table in EXAM_FLOW.md.
+**Decision:** Add `tags` and `difficulty` to the field table in exam_flow.md.
 
-### 8. `GET /session/{id}/questions` endpoint — DECIDED: doc gap, add to EXAM_FLOW.md
+### 8. `GET /session/{id}/questions` endpoint — DECIDED: doc gap, add to exam_flow.md
 
 **Problem:** Haisir documents this endpoint (paragraph grouping reconstruction, image encoding). haiguru's doc skips it.
 
-**Decision:** Add endpoint documentation to EXAM_FLOW.md, matching haisir's description.
+**Decision:** Add endpoint documentation to exam_flow.md, matching haisir's description.
 
 ### 7. Dynamic exam ruleset — DECIDED: doc gap, add haisir's ruleset docs
 
-**Problem:** `ruleset` JSON column exists on both `ExamTemplate` and `ExamSession` but EXAM_FLOW.md doesn't document the structure.
+**Problem:** `ruleset` JSON column exists on both `ExamTemplate` and `ExamSession` but exam_flow.md doesn't document the structure.
 
-**Decision:** Add haisir's ruleset documentation (`topics`, `difficulty_distribution`, `tags`) to EXAM_FLOW.md as-is — same structure.
+**Decision:** Add haisir's ruleset documentation (`topics`, `difficulty_distribution`, `tags`) to exam_flow.md as-is — same structure.
 
-### 6. `exam_templates` ownership/visibility fields — DECIDED: doc gap, add to EXAM_FLOW.md
+### 6. `exam_templates` ownership/visibility fields — DECIDED: doc gap, add to exam_flow.md
 
-**Problem:** Schema has `description`, `created_by`, `is_active`, `owner_type`, `owner_id`, `organization_id`, `purpose` on `exam_templates`. EXAM_FLOW.md omits all of them.
+**Problem:** Schema has `description`, `created_by`, `is_active`, `owner_type`, `owner_id`, `organization_id`, `purpose` on `exam_templates`. exam_flow.md omits all of them.
 
-**Decision:** Add the missing fields to EXAM_FLOW.md to match the schema.
+**Decision:** Add the missing fields to exam_flow.md to match the schema.
 
 ### 5. Assessments table — DECIDED: intentionally dropped
 
 **Problem:** haisir has `assessments`, `AssessmentAttempt`, `AssessmentAnswer` tables (topic-scoped practice sets). haiguru's schema has none of these.
 
-**Decision:** Intentionally dropped. haiguru focuses on exam grading with LLM/RAG. Document this as a known omission in EXAM_FLOW.md.
+**Decision:** Intentionally dropped. haiguru focuses on exam grading with LLM/RAG. Document this as a known omission in exam_flow.md.
 
 ### 4. OCR normalization — DECIDED: open gap
 
 **Problem:** The doc says `grade_question` should normalize OCR text (e.g. `"option B"` → `"b"`) but doesn't define concrete rules.
 
-**Decision:** Flag as an open implementation gap in EXAM_FLOW.md. Define normalization rules when building the OCR pipeline.
+**Decision:** Flag as an open implementation gap in exam_flow.md. Define normalization rules when building the OCR pipeline.
 
 ### 2. Empty `correct_answers` on essay questions — DECIDED: RAG two-layer
 
