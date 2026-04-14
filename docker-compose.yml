@@ -38,9 +38,20 @@ services:
       postgres:
         condition: service_healthy
 
+  phoenix:
+    image: arizephoenix/phoenix:latest
+    container_name: haiguru-phoenix
+    ports:
+      - "6006:6006"
+    volumes:
+      - phoenix_data:/mnt/data
+    networks:
+      - haiguru-net
+
 volumes:
   postgres_data:
   pgadmin_data:
+  phoenix_data:
 
 networks:
   haiguru-net:

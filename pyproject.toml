@@ -20,6 +20,9 @@ dependencies = [
     "llama-index-embeddings-openai>=0.3",
     "openai>=1.0",
     "anthropic>=0.25",
+    "openinference-instrumentation-llama-index>=4.3.9",
+    "arize-phoenix-otel>=0.15.0",
+    "opentelemetry-sdk>=1.41.0",
 ]
 
 [dependency-groups]
