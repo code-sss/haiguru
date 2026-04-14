@@ -58,22 +58,31 @@ def run_ocr(
     content_type: str = "contents",
     model: str = "glm-ocr-optimized",
     overwrite: bool = False,
+    images_subpath: str | None = None,
+    output_subpath: str | None = None,
 ) -> None:
     """Run glm_ocr on images in ctx.topic_path/inputs/{content_type}/.
 
     Outputs are saved to ctx.outputs_dir/{content_type}_outputs/.
     Skips gracefully if the inputs directory does not exist.
     Skips images that already have output unless overwrite=True.
+
+    images_subpath overrides the subfolder used to find images (relative to inputs/).
+    output_subpath overrides the subfolder used for OCR results (relative to outputs/).
+    Both are useful for answer key images which live under exercises/ but need their
+    own output directory.
     """
-    inputs_dir = ctx.topic_path / "inputs" / content_type
+    effective_subpath = images_subpath or content_type
+    inputs_dir = ctx.topic_path / "inputs" / effective_subpath
     if not inputs_dir.is_dir():
-        print(f"[Extract] inputs/{content_type}/ not found, skipping OCR.")
+        print(f"[Extract] inputs/{effective_subpath}/ not found, skipping OCR.")
         return
 
-    images = list(list_image_files(str(ctx.topic_path), content_type))
+    images = list(list_image_files(str(ctx.topic_path), effective_subpath))
     if not images:
-        print(f"[Extract] No images found in inputs/{content_type}/, skipping OCR.")
+        print(f"[Extract] No images found in inputs/{effective_subpath}/, skipping OCR.")
         return
 
     print(f"\n[Extract] {ctx.topic} ({content_type}) — {len(images)} image(s)")
-    run_on_folder(str(ctx.topic_path), model=model, content_type=content_type, overwrite=overwrite)
+    run_on_folder(str(ctx.topic_path), model=model, content_type=content_type, overwrite=overwrite,
+                  images_subpath=images_subpath, output_subpath=output_subpath)

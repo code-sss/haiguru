@@ -53,13 +53,18 @@ def transform(
         print(f"  Saved → {out_path.name}")
         return TransformResult(content_type=content_type, items=items)
 
-    # exercises — LLM-based parsing → qa-sample.json format
-    raw_items: list[dict] = []
-    for md_path in md_files:
-        print(f"  Parsing {md_path.name} via LLM ({transform_model})...")
-        page_items = llm_extract_exercises_items(md_path, model=transform_model)
-        print(f"    → {len(page_items)} item(s)")
-        raw_items.extend(page_items)
+    # Include answer key pages if present — passed to LLM together so it can
+    # directly populate correct_answers while extracting questions.
+    key_outputs_dir = ctx.outputs_dir / "exercises_outputs" / "answer_key"
+    key_md_files = sorted(key_outputs_dir.glob("raw_response_*.md")) if key_outputs_dir.is_dir() else []
+    all_md_files = md_files + key_md_files
+
+    label = f"{len(md_files)} exercise page(s)"
+    if key_md_files:
+        label += f" + {len(key_md_files)} answer key page(s)"
+    print(f"  Merging {label} and parsing via LLM ({transform_model})...")
+    raw_items = llm_extract_exercises_items(all_md_files, model=transform_model)
+    print(f"  → {len(raw_items)} item(s)")
 
     out_path = outputs_dir / "exercises.json"
     out_path.write_text(
@@ -83,6 +88,7 @@ def _normalize_question(q: dict, passage: str | None, paragraph_title: str | Non
     id_to_text = {o["id"]: o["text"] for o in q.get("options", [])}
     correct_answers = [id_to_text.get(a, a) for a in q.get("correct_answers", [])]
     return {
+        "source_question_number": q.get("source_question_number"),
         "question_type": q["question_type"],
         "question_text": q["question_text"],
         "options": options,
@@ -91,6 +97,42 @@ def _normalize_question(q: dict, passage: str | None, paragraph_title: str | Non
         "paragraph_title": paragraph_title,
         "points": q.get("points", 1),
     }
+
+
+def _apply_answers(raw_items: list[dict], answers: dict[str, str]) -> None:
+    """Populate correct_answers on raw_items in-place using a question_number → answer mapping.
+
+    Handles both standalone questions and nested paragraph items.
+    For choice questions: if the answer is a letter (A/B/C/D), resolves to option text.
+    For fill_in_the_blank/essay: stores the answer text directly.
+    """
+    _LETTER_TO_INDEX = {"a": 0, "b": 1, "c": 2, "d": 3, "e": 4}
+
+    def _resolve(q: dict) -> None:
+        num = q.get("source_question_number")
+        if not num or str(num) not in answers:
+            return
+        raw_answer = answers[str(num)]
+        q_type = q.get("question_type", "essay")
+        options = q.get("options", [])
+
+        if q_type in ("single_choice", "multiple_choice", "true_false") and options:
+            letter = raw_answer.strip().lower()
+            idx = _LETTER_TO_INDEX.get(letter)
+            if idx is not None and idx < len(options):
+                resolved = options[idx]["text"] if isinstance(options[0], dict) else options[idx]
+                q["correct_answers"] = [resolved]
+            else:
+                q["correct_answers"] = [raw_answer]
+        else:
+            q["correct_answers"] = [raw_answer]
+
+    for item in raw_items:
+        if item.get("type") == "paragraph":
+            for sub_q in item.get("questions", []):
+                _resolve(sub_q)
+        else:
+            _resolve(item)
 
 
 def transform_json_exercises(json_path: str) -> TransformResult:

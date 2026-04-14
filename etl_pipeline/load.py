@@ -67,6 +67,7 @@ def _load_exercises(session: Session, ctx: TopicContext, topic, items: list[dict
             question_type=q["question_type"],
             options=q["options"],
             correct_answers=q["correct_answers"],
+            source_question_number=q.get("source_question_number"),
         )
         if q.get("passage") is not None:
             passage = q["passage"]
@@ -123,6 +124,7 @@ def load_json_exercises(
                 question_type=q["question_type"],
                 options=q["options"],
                 correct_answers=q["correct_answers"],
+                source_question_number=q.get("source_question_number"),
             )
             question_objs.append((q_obj, q))
 

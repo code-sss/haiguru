@@ -104,6 +104,13 @@ def main(argv=None):
     if not args.skip_extract:
         for t in types_to_run:
             run_ocr(ctx, content_type=t, model=args.model, overwrite=args.overwrite)
+        # When exercises are being processed, also OCR answer key if images are present.
+        # Images: inputs/exercises/answer_key/  Prompt: prompts/answer_key_prompt.md
+        # Outputs: outputs/exercises_outputs/answer_key/
+        if args.etl_exercises:
+            run_ocr(ctx, content_type="answer_key", model=args.model, overwrite=args.overwrite,
+                    images_subpath="exercises/answer_key",
+                    output_subpath="exercises_outputs/answer_key")
     else:
         print("[Extract] OCR skipped.")
 

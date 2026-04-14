@@ -143,6 +143,7 @@ class Question(Base):
     )
     tags = Column(JSONB, nullable=True)
     image_url = Column(String, nullable=True)
+    source_question_number = Column(String, nullable=True)  # original textbook question number, e.g. "1", "3a"
     topic_id = Column(UUID(as_uuid=True), ForeignKey("topics.id"), nullable=True)
 
 

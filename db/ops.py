@@ -75,12 +75,14 @@ def get_or_create_question(
     question_type: str,
     options: list,
     correct_answers: list,
+    source_question_number: str | None = None,
 ) -> Question:
     obj = session.query(Question).filter_by(topic_id=topic_id, question_text=question_text).first()
     if obj:
         obj.question_type = question_type
         obj.options = options
         obj.correct_answers = correct_answers
+        obj.source_question_number = source_question_number
         print(f"  Updated question: {question_text[:60]}")
     else:
         obj = Question(
@@ -89,6 +91,7 @@ def get_or_create_question(
             question_type=question_type,
             options=options,
             correct_answers=correct_answers,
+            source_question_number=source_question_number,
         )
         session.add(obj)
         session.flush()

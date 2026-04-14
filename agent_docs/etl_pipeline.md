@@ -66,18 +66,36 @@ uv run python -m etl_pipeline --load-exercises qa-sample.json --course-node-id <
 
 ## Intermediary outputs
 
-Both content types now write a JSON file after transform, alongside the `.md` files:
-
 | File | Written by | Format |
 |---|---|---|
 | `outputs/contents_outputs/contents.json` | `--etl-contents` transform | `[{title, text, order}]` |
 | `outputs/exercises_outputs/exercises.json` | `--etl-exercises` transform | qa-sample.json format (see below) |
+| `outputs/exercises_outputs/answer_key/raw_response_*.md` | `--etl-exercises` OCR | raw OCR text of answer key images |
 
 `exercises.json` is in the same format as a hand-authored qa-sample.json, so it can be fed directly
 to `--load-exercises` to reload without re-running OCR or the LLM transform. This is useful for:
 - Inspecting what the LLM extracted before committing to DB
 - Manually editing questions/answers then reloading
 - Re-loading after a DB wipe without re-running OCR
+
+## Answer key support
+
+Place answer key images under `inputs/exercises/answer_key/` alongside the exercise images.
+Create a prompt file at `prompts/answer_key_prompt.md` instructing the OCR model to output
+numbered answers (e.g. `1. A`, `2. 5`).
+
+When `--etl-exercises` runs:
+1. Exercise images are OCR'd to `outputs/exercises_outputs/`
+2. Answer key images are OCR'd separately (using `answer_key_prompt.md`) to `outputs/exercises_outputs/answer_key/`
+3. All exercise pages **and** answer key pages are merged and sent to the LLM in a **single call**
+4. The LLM extracts questions and, using the answer key pages, directly populates `correct_answers`
+
+This means `correct_answers` and `source_question_number` are populated in `exercises.json`
+after a single transform pass — no separate merge step needed.
+
+**Fallback**: `etl_pipeline/llm_transform_answer_key.py` and `transform._apply_answers()` exist
+as standalone utilities if you ever need to parse an answer key separately and merge it into an
+existing `exercises.json` manually. They are not called in the normal pipeline.
 
 ## JSON exercises format (qa-sample.json)
 
@@ -93,6 +111,7 @@ Used by both `--load-exercises` and the saved `exercises.json` intermediary:
   "items": [
     {
       "type": "question",
+      "source_question_number": "1",
       "question_type": "single_choice|multiple_choice|true_false|fill_in_the_blank|essay",
       "question_text": "...",
       "options": [{"id": "a", "text": "..."}, {"id": "b", "text": "..."}],
@@ -111,18 +130,19 @@ Used by both `--load-exercises` and the saved `exercises.json` intermediary:
 }
 ```
 
+- `source_question_number` — original textbook number (e.g. `"1"`, `"3(a)"`); stored as `questions.source_question_number` in DB
 - `options` — `{id, text}` objects; normalized to plain strings on load
-- `correct_answers` — option IDs (e.g. `"a"`, `"c"`); resolved to option text on load
+- `correct_answers` — option IDs (e.g. `"a"`, `"c"`) for choice questions, raw text for fill_in_the_blank/essay; resolved to option text on load
 - `passing_score` > 1 treated as percentage (`80` → `0.8`)
 - `mode` defaults to `"static"` if absent
 - Paragraph `questions` are flattened and linked via `paragraph_questions` table
 
 ## Exercise Parsing (OCR path)
 
-Each `exercises_outputs/raw_response_*.md` file is sent to the LLM (`TRANSFORM_MODEL`) which returns
-items in qa-sample.json format (structured `{id, text}` options, ID-based correct_answers, explanation,
-difficulty, tags, and paragraph/passage support). The combined result is saved to `exercises.json`
-before being normalized for the load step.
+All `exercises_outputs/raw_response_*.md` files (and `exercises_outputs/answer_key/raw_response_*.md`
+if present) are **merged into a single LLM call** using `TRANSFORM_MODEL`. The LLM returns all items
+in qa-sample.json format with `correct_answers` already populated from the answer key. The combined
+result is saved to `exercises.json` before being normalized for the load step.
 
 ## Gotchas
 

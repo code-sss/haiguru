@@ -16,12 +16,16 @@ _PROMPT_TEMPLATE = """\
 /no_think
 You are an expert at parsing raw OCR text from school textbook exercise pages.
 
+The input may contain both exercise pages (with questions) and answer key pages.
+Answer key pages list question numbers with their correct answers (e.g. "1. A", "2. 5").
+
 Given the raw text below, extract ALL questions and return them as a JSON array of items.
 Each item must be one of these two structures:
 
 Standalone question:
 {{
   "type": "question",
+  "source_question_number": "exercise-1-VSAQ-01",
   "question_type": "<type>",
   "question_text": "<full question text>",
   "options": [{{"id": "a", "text": "<option text>"}}, {{"id": "b", "text": "<option text>"}}, ...],
@@ -31,7 +35,7 @@ Standalone question:
   "tags": ["<tag>", ...]
 }}
 
-Paragraph/passage group (linked comprehension):
+Paragraph/passage group (linked comprehension only):
 {{
   "type": "paragraph",
   "title": "<short title for the passage>",
@@ -42,8 +46,25 @@ Paragraph/passage group (linked comprehension):
   ]
 }}
 
+Rules for source_question_number:
+- Format as "exercise-<N>-<section>-<number>" using the exercise number, section abbreviation,
+  and the question's number within that section, zero-padded to 2 digits.
+  Examples: "exercise-1-VSAQ-01", "exercise-1-SAQ-11", "exercise-2-SOC-11", "exercise-2-LCT-31".
+- Section abbreviations (use exactly these regardless of how the heading is spelled):
+    VSAQ — Very Short Answer Questions
+    SAQ  — Short Answer Questions
+    SQ   — Subjective / Long Answer Questions
+    TF   — True or False
+    SOC  — Single Option Correct
+    MOC  — One or More Than One Option Correct
+    LCT  — Linked Comprehension Type
+    MMT  — Matrix Match Type
+- If there is only one exercise with no section headings, use just the question number (e.g. "1", "2").
+- Do NOT include the number in question_text.
+- Use null only if neither a question number nor a section heading can be determined.
+
 Rules for question_type (pick exactly one):
-- "essay"             — open-ended; no options (VSAQ / SAQ / LAQ sections)
+- "essay"             — open-ended; no options (VSAQ / SAQ / SQ sections)
 - "fill_in_the_blank" — sentence with a blank to fill
 - "single_choice"     — exactly one correct answer from (A)/(B)/(C)/(D) options
 - "multiple_choice"   — more than one correct answer from options
@@ -55,8 +76,26 @@ Rules for options:
 - Empty list [] when there are no options (essay, fill_in_the_blank).
 
 Rules for correct_answers:
-- Use option IDs (e.g. ["a", "c"]), not the option text.
-- If the answer is not shown, use an empty list [].
+- IMPORTANT: When an answer key page is provided, always copy answers DIRECTLY from the key.
+  Match by source_question_number. Do NOT compute or verify answers yourself.
+- For single_choice/multiple_choice/true_false: use option IDs (e.g. ["a", "c"]).
+  Convert letter answers from the key (A→"a", B→"b", C→"c", D→"d").
+  For MOC keys like "ABD", expand to ["a", "b", "d"].
+- For fill_in_the_blank/essay: store the answer text directly as a string in the list.
+- If the answer is not in the key, use an empty list [].
+
+Rules for multi-part questions:
+- If a question has sub-parts labeled (i), (ii), (iii)... they are parts of ONE question.
+  Do NOT turn sub-part answers into options. Keep it as a single question (essay or
+  fill_in_the_blank) and store the combined answer as one string
+  (e.g., "(i) 0, (ii) 0, (iii) not defined, (iv) 1").
+- Only use options when the question explicitly offers lettered choices (A)/(B)/(C)/(D).
+
+Rules for instruction headers:
+- If a numbered question is an instruction ("Find the product using suitable property...")
+  followed immediately by numbered sub-questions, do NOT emit the instruction as a
+  standalone question. Instead, prepend the instruction text into the question_text of
+  each sub-question.
 
 Rules for explanation:
 - Include any answer explanation or working shown in the text.
@@ -67,15 +106,16 @@ Rules for difficulty:
 - Default to "medium" if uncertain.
 
 Rules for paragraph groups:
-- Use "paragraph" ONLY when 2 or more questions share the exact same passage or reading excerpt.
-- A single word problem or scenario with one question is NOT a paragraph — embed the full scenario text into question_text and return it as a standalone question.
-- Set "content" to the full passage text.
-- Each sub-question follows the standalone question structure.
+- Use "paragraph" ONLY for LCT (Linked Comprehension) where 2 or more questions explicitly
+  share the same passage or reading excerpt. Set "content" to the full passage text.
+- True/False questions are standalone questions — do NOT group them into a paragraph.
+- SOC/MOC questions each have their own options — do NOT group them into a paragraph.
+- A single word problem with one question is NOT a paragraph — embed the scenario into
+  question_text and return it as a standalone question.
 
 Do NOT include:
-- Section headings (VSAQ, SAQ, EXERCISE-1, etc.)
+- Section headings (VSAQ, SAQ, EXERCISE-1, TRUE OR FALSE, SOC, etc.)
 - Page numbers or figure references
-- Question numbers (01., 02. …) — strip them from question_text
 
 Return ONLY a valid JSON array. No explanation, no markdown fences.
 
@@ -85,9 +125,12 @@ Raw exercise text:
 JSON array:"""
 
 
-def llm_extract_exercises_items(md_path: Path, model: str) -> list[dict]:
-    """Use an LLM (Ollama, OpenAI, Anthropic, or TogetherAI) to parse a raw exercises
-    markdown file into qa-sample.json format items.
+def llm_extract_exercises_items(md_paths: list[Path], model: str) -> list[dict]:
+    """Use an LLM (Ollama, OpenAI, Anthropic, or TogetherAI) to parse raw exercises
+    OCR files into qa-sample.json format items.
+
+    All pages are merged into a single LLM call so the model has full context across
+    pages (consistent numbering, no cross-page split questions).
 
     The model spec follows the same provider prefix convention as the rest of the
     codebase (e.g. "openai://gpt-4o-mini", "anthropic://...", or a plain Ollama model name).
@@ -95,7 +138,8 @@ def llm_extract_exercises_items(md_path: Path, model: str) -> list[dict]:
     Returns a list of item dicts, each with type="question" or type="paragraph".
     Returns an empty list (with a warning) on failure.
     """
-    raw_text = md_path.read_text(encoding="utf-8").strip()
+    parts = [p.read_text(encoding="utf-8").strip() for p in md_paths if p.exists()]
+    raw_text = "\n\n---\n\n".join(p for p in parts if p)
     if not raw_text:
         return []
 
@@ -188,6 +232,7 @@ def _normalise_question_item(q: dict) -> dict:
     """Ensure a question item has all required keys in qa-sample.json format."""
     return {
         "type": "question",
+        "source_question_number": q.get("source_question_number"),
         "question_type": q.get("question_type", "essay"),
         "question_text": q.get("question_text", ""),
         "options": q.get("options") or [],

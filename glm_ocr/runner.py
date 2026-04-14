@@ -5,20 +5,26 @@ from .client import get_optimized_image_b64, send_streamed_request, save_raw_res
 from .utils import read_prompt_file, list_image_files, check_quality
 
 
-def run_on_folder(folder_path: str, model: str, content_type: str = "contents", overwrite: bool = False) -> None:
+def run_on_folder(folder_path: str, model: str, content_type: str = "contents", overwrite: bool = False, images_subpath: Optional[str] = None, output_subpath: Optional[str] = None) -> None:
     """Process all images in `folder_path/inputs/{content_type}/`, using
     `folder_path/prompts/{content_type}_prompt.md`, and saving outputs to
     `folder_path/outputs/{content_type}_outputs/`.
+
+    images_subpath overrides where images are read from (relative to inputs/).
+    output_subpath overrides where OCR results are written (relative to outputs/).
+    Both are useful when images and outputs live in subfolders (e.g. answer key images
+    under exercises/) while the prompt is still keyed by content_type.
     """
     folder = Path(folder_path)
     if not folder.is_dir():
         raise ValueError(f"Not a folder: {folder_path}")
 
     folder_prompt = read_prompt_file(str(folder), content_type)
-    out_dir = folder / "outputs" / f"{content_type}_outputs"
+    out_dir = folder / "outputs" / (output_subpath or f"{content_type}_outputs")
     os.makedirs(out_dir, exist_ok=True)
 
-    for img_path in list_image_files(str(folder), content_type):
+    images_content_type = images_subpath or content_type
+    for img_path in list_image_files(str(folder), images_content_type):
         process_image(img_path, model, folder_prompt, str(out_dir), overwrite=overwrite, content_type=content_type)
 
 
