@@ -121,6 +121,26 @@ def _nodes_to_json(nodes) -> str:
     ], ensure_ascii=False)
 
 
+def _set_retrieval_documents(span, nodes) -> None:
+    """Set OpenInference retrieval.documents.N.* attributes on a RETRIEVER span."""
+    for i, node in enumerate(nodes):
+        span.set_attribute(f"retrieval.documents.{i}.document.content", node.text)
+        span.set_attribute(f"retrieval.documents.{i}.document.score", node.score or 0.0)
+        span.set_attribute(f"retrieval.documents.{i}.document.metadata", json.dumps(node.metadata, ensure_ascii=False))
+
+
+def _set_reranker_documents(span, input_nodes, output_nodes, query: str, model: str) -> None:
+    """Set OpenInference reranker.* attributes on a RERANKER span."""
+    span.set_attribute("reranker.query", query)
+    span.set_attribute("reranker.model_name", model)
+    for i, node in enumerate(input_nodes):
+        span.set_attribute(f"reranker.input_documents.{i}.document.content", node.text)
+        span.set_attribute(f"reranker.input_documents.{i}.document.score", node.score or 0.0)
+    for i, node in enumerate(output_nodes):
+        span.set_attribute(f"reranker.output_documents.{i}.document.content", node.text)
+        span.set_attribute(f"reranker.output_documents.{i}.document.score", node.score or 0.0)
+
+
 def main() -> None:
     tracer_provider = phoenix_register(
         project_name="haiguru-rag",
@@ -175,17 +195,14 @@ def main() -> None:
                 span.set_attribute("input.value", result.rewritten_query)
                 span.set_attribute("input.mime_type", "text/plain")
                 nodes = retriever.retrieve(result.rewritten_query)
-                span.set_attribute("output.value", _nodes_to_json(nodes))
-                span.set_attribute("output.mime_type", "application/json")
+                _set_retrieval_documents(span, nodes)
             if RERANK_MODEL:
                 with traced(tracer, "reranker", **{"openinference.span.kind": "RERANKER"}) as span:
-                    span.set_attribute("input.value", args.query)
-                    span.set_attribute("input.mime_type", "text/plain")
                     reranker = make_reranker(RERANK_MODEL, top_n=args.top_k, model_path=MODEL_PATH, device=EMBED_DEVICE)
                     from llama_index.core.schema import QueryBundle
-                    nodes = reranker.postprocess_nodes(nodes, query_bundle=QueryBundle(args.query))
-                    span.set_attribute("output.value", _nodes_to_json(nodes))
-                    span.set_attribute("output.mime_type", "application/json")
+                    input_nodes = nodes
+                    nodes = reranker.postprocess_nodes(input_nodes, query_bundle=QueryBundle(args.query))
+                    _set_reranker_documents(span, input_nodes, nodes, args.query, RERANK_MODEL)
             _print_nodes(nodes)
             return
 
@@ -272,19 +289,16 @@ def main() -> None:
             span.set_attribute("input.mime_type", "text/plain")
             nodes = retriever.retrieve(result.rewritten_query)
             span.set_attribute("nodes_retrieved", len(nodes))
-            span.set_attribute("output.value", _nodes_to_json(nodes))
-            span.set_attribute("output.mime_type", "application/json")
+            _set_retrieval_documents(span, nodes)
 
         if RERANK_MODEL:
             with traced(tracer, "reranker", model=RERANK_MODEL, **{"openinference.span.kind": "RERANKER"}) as span:
-                span.set_attribute("input.value", args.query)
-                span.set_attribute("input.mime_type", "text/plain")
                 reranker = make_reranker(RERANK_MODEL, top_n=args.top_k, model_path=MODEL_PATH, device=EMBED_DEVICE)
                 from llama_index.core.schema import QueryBundle
-                nodes = reranker.postprocess_nodes(nodes, query_bundle=QueryBundle(args.query))
+                input_nodes = nodes
+                nodes = reranker.postprocess_nodes(input_nodes, query_bundle=QueryBundle(args.query))
                 span.set_attribute("nodes_after_rerank", len(nodes))
-                span.set_attribute("output.value", _nodes_to_json(nodes))
-                span.set_attribute("output.mime_type", "application/json")
+                _set_reranker_documents(span, input_nodes, nodes, args.query, RERANK_MODEL)
 
         synthesis_query = f"[{result.intent}] {args.query}"
         synthesizer = CompactAndRefine(
