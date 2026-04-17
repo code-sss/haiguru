@@ -5,6 +5,9 @@ import os
 from io import BytesIO
 from PIL import Image
 import ollama
+from dotenv import load_dotenv
+
+load_dotenv(override=True)
 
 
 def get_optimized_image_b64(source):
@@ -23,13 +26,22 @@ def get_optimized_image_b64(source):
 
 
 def send_streamed_request(model, prompt, images_b64):
-    """Invoke `ollama.generate` in streaming mode and yield events.
+    """Invoke generation in streaming mode and yield events.
 
     Yields tuples (tag, payload):
       - ("__first_token__", seconds_to_first_token)
       - ("chunk", text_chunk)
       - ("__done__", total_seconds)
+
+    Model name conventions:
+      lmstudio://<model>  — LM Studio OpenAI-compat API (LMSTUDIO_BASE_URL)
+      <plain-name>        — Ollama (local)
     """
+    if model.startswith("lmstudio://"):
+        model_name = model[len("lmstudio://"):]
+        yield from _lmstudio_vision_stream(model_name, prompt, images_b64)
+        return
+
     start_time = time.time()
     stream = ollama.generate(model=model, prompt=prompt, images=images_b64, stream=True,
                              options={"num_ctx": 8192, "num_predict": 4096})
@@ -54,6 +66,42 @@ def send_text_request(model, prompt):
     result = ollama.generate(model=model, prompt=prompt, stream=False,
                              options={"num_ctx": 8192, "num_predict": 4096})
     return result.get("response", "")
+
+
+def _lmstudio_vision_stream(model_name: str, prompt: str, images_b64: list):
+    """Stream a vision request via LM Studio's OpenAI-compatible API.
+
+    Uses LMSTUDIO_BASE_URL env var (default: http://127.0.0.1:1234/v1).
+    Yields tuples matching send_streamed_request format:
+      ("__first_token__", seconds), ("chunk", text), ("__done__", seconds)
+    """
+    import openai as _openai
+    base_url = os.getenv("LMSTUDIO_BASE_URL", "http://127.0.0.1:1234/v1")
+    client = _openai.OpenAI(api_key="lm-studio", base_url=base_url)
+
+    content = [{"type": "text", "text": prompt}]
+    for img_b64 in images_b64:
+        content.append({
+            "type": "image_url",
+            "image_url": {"url": f"data:image/jpeg;base64,{img_b64}"},
+        })
+
+    start_time = time.time()
+    stream = client.chat.completions.create(
+        model=model_name,
+        messages=[{"role": "user", "content": content}],
+        stream=True,
+        max_tokens=4096,
+    )
+    first = True
+    for chunk in stream:
+        delta = chunk.choices[0].delta.content
+        if delta:
+            if first:
+                yield ("__first_token__", time.time() - start_time)
+                first = False
+            yield ("chunk", delta)
+    yield ("__done__", time.time() - start_time)
 
 
 def _strip_no_think(prompt: str) -> str:

@@ -35,6 +35,9 @@ LLM_THINKING: bool = os.getenv("LLM_THINKING", "false").lower() in ("1", "true",
 RERANK_MODEL: str = os.getenv("RERANK_MODEL", "")  # empty = disabled
 EVAL_MODEL: str = os.getenv("EVAL_MODEL", "qwen3.5:9b")
 
+# LM Studio local server base URL (used when model prefix is lmstudio://)
+LMSTUDIO_BASE_URL: str = os.getenv("LMSTUDIO_BASE_URL", "http://127.0.0.1:1234/v1")
+
 # API keys for external LLM providers (optional — only needed when using that provider)
 OPENAI_API_KEY: str | None = os.getenv("OPENAI_API_KEY")
 ANTHROPIC_API_KEY: str | None = os.getenv("ANTHROPIC_API_KEY")
