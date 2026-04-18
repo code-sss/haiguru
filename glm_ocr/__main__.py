@@ -8,7 +8,7 @@ def main(argv=None):
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--folder", help="Path to folder containing images to process")
     group.add_argument("--image", help="Path to a single image to process")
-    parser.add_argument("--model", default="glm-ocr-optimized", help="Model name to use")
+    parser.add_argument("--model", default="glm-ocr", help="Model name to use")
     parser.add_argument("--type", default="contents", choices=["contents", "exercises"], help="Which input type to process (default: contents)")
     parser.add_argument("--overwrite", action="store_true", help="Overwrite existing output files (default: skip already processed images)")
 
