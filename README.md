@@ -4,6 +4,12 @@ Backend for storing and serving educational content and exams.
 
 ---
 
+## Integration
+
+For microservices that want to depend on or query haiguru, see **[docs/integration.md](docs/integration.md)** — covers the data model, Python API, connection details, and env var checklist.
+
+---
+
 ## Prerequisites
 
 | Tool | Purpose |
