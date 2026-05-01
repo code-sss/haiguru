@@ -10,9 +10,49 @@ Model name conventions (same as glm_ocr/client.py):
 from __future__ import annotations
 
 import os
+from pathlib import Path
+from typing import Any
 
 from llama_index.core.embeddings import BaseEmbedding
 from llama_index.core.llms import LLM
+
+
+def _is_local_model_dir(path: Path) -> bool:
+    return (path / "config.json").exists() or (path / "modules.json").exists()
+
+
+def _resolve_local_hf_model_path(model_spec: str, model_path: str | None) -> str | None:
+    """Resolve a Hugging Face cache root to a concrete local model directory.
+
+    MODEL_PATH may point either to a model directory directly or to a Hugging Face
+    cache root containing models--<org>--<name>/snapshots/<revision>.
+    """
+    if not model_path:
+        return None
+
+    cache_root = Path(model_path).expanduser()
+    direct_candidates = [cache_root, cache_root / model_spec]
+    for candidate in direct_candidates:
+        if candidate.is_dir() and _is_local_model_dir(candidate):
+            return str(candidate)
+
+    repo_cache_dir = cache_root / f"models--{model_spec.replace('/', '--')}"
+    snapshots_dir = repo_cache_dir / "snapshots"
+    if not snapshots_dir.is_dir():
+        return None
+
+    ref_file = repo_cache_dir / "refs" / "main"
+    if ref_file.is_file():
+        snapshot_name = ref_file.read_text(encoding="utf-8").strip()
+        candidate = snapshots_dir / snapshot_name
+        if candidate.is_dir() and _is_local_model_dir(candidate):
+            return str(candidate)
+
+    for candidate in sorted(snapshots_dir.iterdir(), reverse=True):
+        if candidate.is_dir() and _is_local_model_dir(candidate):
+            return str(candidate)
+
+    return None
 
 
 def make_llm(
@@ -78,9 +118,14 @@ def make_embed_model(
     if "://" not in model_spec:
         from llama_index.embeddings.huggingface import HuggingFaceEmbedding
 
+        local_model_path = _resolve_local_hf_model_path(model_spec, model_path)
+        model_name = local_model_path or model_spec
+        model_kwargs: dict[str, Any] = {"local_files_only": True} if local_model_path else {}
+
         return HuggingFaceEmbedding(
-            model_name=model_spec,
+            model_name=model_name,
             device=device,
+            **model_kwargs,
             **({"cache_folder": model_path} if model_path else {}),
         )
 
